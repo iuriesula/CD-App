@@ -1,0 +1,491 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// Enums
+enum UserRole {
+  salesperson
+  manager
+  tech
+  content_creator
+  agency_admin
+}
+
+enum LeadStage {
+  new_lead
+  interested
+  negotiating
+  buyers_order_sent
+  buyers_order_signed
+  invoice_sent
+  won_invoice_paid
+  won_preparing
+  won_ready_to_ship
+  won_arrived
+  lost
+  lost_unanswered
+}
+
+enum LeadSource {
+  meta_ad
+  website_form
+  phone_call
+  walk_in
+  referral
+  email
+}
+
+enum ActivityType {
+  email_sent
+  email_received
+  call_outbound
+  call_inbound
+  call_missed
+  voicemail_left
+  note_added
+  stage_changed
+  document_sent
+  document_signed
+}
+
+enum TaskType {
+  follow_up_call
+  follow_up_email
+  review_document
+  custom
+}
+
+enum DocumentType {
+  buyers_order
+  invoice
+  loan_agreement
+}
+
+enum DocumentStatus {
+  draft
+  sent
+  viewed
+  signed
+}
+
+enum VehicleStatus {
+  available
+  pending
+  sold
+  reserved
+}
+
+// Models
+model Dealership {
+  id        String   @id @default(uuid())
+  name      String
+  address   String?
+  city      String?
+  state     String?
+  zip       String?
+  phone     String?
+  phones         String[] @default([])
+  email          String?
+  contactEmails  String[] @default([]) @map("contact_emails")
+  website   String?
+  settings  Json     @default("{}")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Branding
+  logoUrl    String? @map("logo_url")
+  brandColor String? @map("brand_color") // Hex color e.g. "#1e40af"
+
+  // Email Configuration (SMTP for sending)
+  smtpHost     String? @map("smtp_host")
+  smtpPort     Int?    @map("smtp_port")
+  smtpUser     String? @map("smtp_user")
+  smtpPassword String? @map("smtp_password")
+  smtpSecure   Boolean @default(true) @map("smtp_secure")
+  emailFromName    String? @map("email_from_name")
+  emailFromAddress String? @map("email_from_address")
+
+  // Email Configuration (IMAP for receiving)
+  imapHost     String? @map("imap_host")
+  imapPort     Int?    @map("imap_port")
+  imapUser     String? @map("imap_user")
+  imapPassword String? @map("imap_password")
+  imapSecure   Boolean @default(true) @map("imap_secure")
+
+  // Email sync tracking
+  lastEmailSync DateTime? @map("last_email_sync")
+  emailSyncEnabled Boolean @default(false) @map("email_sync_enabled")
+
+  // Lead assignment round-robin tracking
+  lastLeadAssignedToId String? @map("last_lead_assigned_to_id")
+
+  users                User[]
+  leads                Lead[]
+  tasks                Task[]
+  documents            Document[]
+  emails               Email[]
+  callLogs             CallLog[]
+  vehicles             Vehicle[]
+  metaCampaignMappings MetaCampaignMapping[]
+  emailTemplates       EmailTemplate[]
+  emailSignatures      EmailSignature[]
+  media                DealershipMedia[]
+
+  @@map("dealerships")
+}
+
+model DealershipMedia {
+  id           String   @id @default(uuid())
+  dealershipId String   @map("dealership_id")
+  name         String   // Original filename or user-given name
+  type         String   // "logo", "banner", "signature", "general", "folder"
+  url          String   // Relative URL to the file (empty for folders)
+  mimeType     String?  @map("mime_type")
+  size         Int?     // File size in bytes
+  folder       String?  // Folder path, null = root. For nested: "folder1/folder2"
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  dealership Dealership @relation(fields: [dealershipId], references: [id], onDelete: Cascade)
+
+  @@index([dealershipId])
+  @@index([dealershipId, folder])
+  @@map("dealership_media")
+}
+
+model User {
+  id                 String     @id @default(uuid())
+  dealershipId       String?    @map("dealership_id")
+  email              String     @unique
+  passwordHash       String     @map("password_hash")
+  name               String
+  role               UserRole   @default(salesperson)
+  voipExtension      String?    @map("voip_extension")
+  isActive           Boolean    @default(true) @map("is_active")
+  mustChangePassword Boolean    @default(false) @map("must_change_password")
+  createdAt          DateTime   @default(now()) @map("created_at")
+  updatedAt          DateTime   @updatedAt @map("updated_at")
+
+  dealership      Dealership?      @relation(fields: [dealershipId], references: [id])
+  leads           Lead[]           @relation("AssignedLeads")
+  activities      Activity[]
+  tasks           Task[]
+  emails          Email[]
+  callLogs        CallLog[]
+  emailSignatures EmailSignature[]
+
+  @@map("users")
+}
+
+model Lead {
+  id           String    @id @default(uuid())
+  dealershipId String    @map("dealership_id")
+  assignedToId String?   @map("assigned_to")
+
+  // Pipeline
+  stage           LeadStage @default(new_lead)
+  winProbability  Decimal   @default(0.10) @map("win_probability") @db.Decimal(3, 2)
+
+  // Source & Attribution
+  source         LeadSource?
+  metaCampaignId String?     @map("meta_campaign_id")
+  metaAdsetId    String?     @map("meta_adset_id")
+  metaAdId       String?     @map("meta_ad_id")
+  metaAccountId  String?     @map("meta_account_id")
+  utmCampaign    String?     @map("utm_campaign")
+  utmSource      String?     @map("utm_source")
+  utmMedium      String?     @map("utm_medium")
+
+  // Contact Info
+  firstName       String?   @map("first_name")
+  lastName        String?   @map("last_name")
+  primaryEmail    String?   @map("primary_email")
+  primaryPhone    String?   @map("primary_phone")
+  alternateEmails String[]  @default([]) @map("alternate_emails")
+  alternatePhones String[]  @default([]) @map("alternate_phones")
+
+  // Location
+  city     String?
+  state    String?
+  zip      String?
+  sourceIp String? @map("source_ip")  // IP address from form submission
+
+  // Interest
+  interestedVehicle String?  @map("interested_vehicle")
+  vehicleId         String?  @map("vehicle_id")
+  notes             String?
+
+  // Follow-up Tracking
+  attemptCount   Int       @default(0) @map("attempt_count")
+  lastAttemptAt  DateTime? @map("last_attempt_at")
+  nextFollowUpAt DateTime? @map("next_follow_up_at")
+
+  // Timestamps
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  closedAt  DateTime? @map("closed_at")
+
+  dealership Dealership @relation(fields: [dealershipId], references: [id])
+  assignedTo User?      @relation("AssignedLeads", fields: [assignedToId], references: [id])
+  vehicle    Vehicle?   @relation(fields: [vehicleId], references: [id])
+  activities Activity[]
+  tasks      Task[]
+  documents  Document[]
+  emails     Email[]
+  callLogs   CallLog[]
+
+  @@unique([dealershipId, primaryEmail])
+  @@index([vehicleId])
+  @@index([dealershipId])
+  @@index([stage])
+  @@index([assignedToId])
+  @@index([primaryPhone])
+  @@index([nextFollowUpAt])
+  @@map("leads")
+}
+
+model Activity {
+  id           String       @id @default(uuid())
+  leadId       String       @map("lead_id")
+  userId       String?      @map("user_id")
+  activityType ActivityType @map("activity_type")
+  details      Json         @default("{}")
+  createdAt    DateTime     @default(now()) @map("created_at")
+
+  lead Lead  @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([leadId])
+  @@index([createdAt])
+  @@map("activities")
+}
+
+model Task {
+  id           String   @id @default(uuid())
+  leadId       String   @map("lead_id")
+  userId       String   @map("user_id")
+  dealershipId String   @map("dealership_id")
+
+  taskType    TaskType @map("task_type")
+  title       String
+  description String?
+
+  dueDate DateTime  @map("due_date") @db.Date
+  dueTime DateTime? @map("due_time") @db.Time
+
+  isAutoGenerated Boolean @default(false) @map("is_auto_generated")
+  attemptNumber   Int?    @map("attempt_number")
+
+  completed   Boolean   @default(false)
+  completedAt DateTime? @map("completed_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  lead       Lead       @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  user       User       @relation(fields: [userId], references: [id])
+  dealership Dealership @relation(fields: [dealershipId], references: [id])
+
+  @@index([userId, dueDate])
+  @@index([dealershipId])
+  @@map("tasks")
+}
+
+model Document {
+  id           String         @id @default(uuid())
+  leadId       String         @map("lead_id")
+  dealershipId String         @map("dealership_id")
+
+  documentType DocumentType   @map("document_type")
+  status       DocumentStatus @default(draft)
+
+  filePath           String? @map("file_path")
+  signatureRequestId String? @map("signature_request_id")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  sentAt    DateTime? @map("sent_at")
+  viewedAt  DateTime? @map("viewed_at")
+  signedAt  DateTime? @map("signed_at")
+
+  lead       Lead       @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  dealership Dealership @relation(fields: [dealershipId], references: [id])
+
+  @@index([leadId])
+  @@map("documents")
+}
+
+model MetaCampaignMapping {
+  id             String   @id @default(uuid())
+  dealershipId   String   @map("dealership_id")
+  metaCampaignId String   @unique @map("meta_campaign_id")
+  campaignName   String?  @map("campaign_name")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  dealership Dealership @relation(fields: [dealershipId], references: [id])
+
+  @@map("meta_campaign_mappings")
+}
+
+model Email {
+  id           String  @id @default(uuid())
+  leadId       String? @map("lead_id")
+  userId       String? @map("user_id")
+  dealershipId String  @map("dealership_id")
+
+  direction   String // 'inbound' or 'outbound'
+  fromAddress String @map("from_address")
+  toAddress   String @map("to_address")
+  subject     String?
+  bodyText    String? @map("body_text")
+  bodyHtml    String? @map("body_html")
+
+  messageId String? @map("message_id")
+  inReplyTo String? @map("in_reply_to")
+
+  isRead      Boolean   @default(false) @map("is_read")
+  isImportant Boolean   @default(false) @map("is_important")
+  openedAt    DateTime? @map("opened_at")
+
+  // Folder: null = inbox/sent, "spam" = spam folder, "trash" = trash/bin
+  folder   String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  lead       Lead?      @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  user       User?      @relation(fields: [userId], references: [id])
+  dealership Dealership @relation(fields: [dealershipId], references: [id])
+
+  @@index([leadId])
+  @@index([userId])
+  @@index([folder])
+  @@index([isImportant])
+  @@map("emails")
+}
+
+model CallLog {
+  id           String  @id @default(uuid())
+  leadId       String? @map("lead_id")
+  userId       String? @map("user_id")
+  dealershipId String  @map("dealership_id")
+
+  direction   String // 'inbound' or 'outbound'
+  fromNumber  String? @map("from_number")
+  toNumber    String? @map("to_number")
+  didUsed     String? @map("did_used")
+
+  status          String? // 'answered', 'missed', 'voicemail', 'busy', 'failed'
+  durationSeconds Int     @default(0) @map("duration_seconds")
+  recordingPath   String? @map("recording_path")
+
+  yateCallId String? @map("yate_call_id")
+
+  startedAt DateTime  @default(now()) @map("started_at")
+  endedAt   DateTime? @map("ended_at")
+
+  lead       Lead?      @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  user       User?      @relation(fields: [userId], references: [id])
+  dealership Dealership @relation(fields: [dealershipId], references: [id])
+
+  @@index([leadId])
+  @@index([userId])
+  @@map("call_logs")
+}
+
+model EmailTemplate {
+  id           String   @id @default(uuid())
+  dealershipId String   @map("dealership_id")
+
+  name        String
+  subject     String
+  bodyHtml    String   @map("body_html")
+  bodyText    String?  @map("body_text")
+  category    String   @default("custom") // follow_up, introduction, offer, thank_you, custom
+
+  isActive    Boolean  @default(true) @map("is_active")
+
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  dealership  Dealership @relation(fields: [dealershipId], references: [id])
+
+  @@index([dealershipId])
+  @@map("email_templates")
+}
+
+model EmailSignature {
+  id           String   @id @default(uuid())
+  dealershipId String   @map("dealership_id")
+  userId       String?  @map("user_id")
+
+  name         String
+  content      String   // HTML content
+  isDefault    Boolean  @default(false) @map("is_default")
+
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  dealership   Dealership @relation(fields: [dealershipId], references: [id])
+  user         User?      @relation(fields: [userId], references: [id])
+
+  @@index([dealershipId])
+  @@index([userId])
+  @@map("email_signatures")
+}
+
+model Vehicle {
+  id           String        @id @default(uuid())
+  dealershipId String        @map("dealership_id")
+
+  // Basic Info
+  year         Int
+  make         String
+  model        String
+  trim         String?
+  vin          String?       @unique
+
+  // Pricing
+  askingPrice  Decimal?      @map("asking_price") @db.Decimal(12, 2)
+  soldPrice    Decimal?      @map("sold_price") @db.Decimal(12, 2)
+
+  // Status
+  status       VehicleStatus @default(available)
+
+  // Details
+  mileage      Int?
+  exteriorColor String?      @map("exterior_color")
+  interiorColor String?      @map("interior_color")
+  transmission  String?
+  engine        String?
+  description   String?
+
+  // Photos (stored as JSON array of URLs)
+  photos       String[]      @default([])
+
+  // For shipping calculator
+  locationCity  String?      @map("location_city")
+  locationState String?      @map("location_state")
+  locationZip   String?      @map("location_zip")
+
+  // Stock number for internal reference
+  stockNumber  String?       @map("stock_number")
+
+  // Sales Info (prepared content for sellers)
+  websiteDescription    String?  @map("website_description")
+  technicalBulletpoints String?  @map("technical_bulletpoints")
+  callScript            String?  @map("call_script")
+
+  // Timestamps
+  createdAt    DateTime      @default(now()) @map("created_at")
+  updatedAt    DateTime      @updatedAt @map("updated_at")
+  soldAt       DateTime?     @map("sold_at")
+
+  dealership   Dealership    @relation(fields: [dealershipId], references: [id])
+  leads        Lead[]
+
+  @@index([dealershipId])
+  @@index([status])
+  @@index([make, model])
+  @@map("vehicles")
+}
