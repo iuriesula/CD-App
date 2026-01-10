@@ -400,6 +400,8 @@ const zipRegions: Record<string, { lat: number; lng: number }> = {
   "835": { lat: 44.5263, lng: -109.0565 },
   "836": { lat: 44.5263, lng: -109.0565 },
   "837": { lat: 44.5263, lng: -109.0565 },
+  "838": { lat: 47.6777, lng: -116.7805 }, // Northern Idaho (Coeur d'Alene/Bonners Ferry)
+  "839": { lat: 47.6777, lng: -116.7805 }, // Northern Idaho
   "840": { lat: 40.7608, lng: -111.8910 }, // Salt Lake City
   "841": { lat: 40.7608, lng: -111.8910 },
   "842": { lat: 40.7608, lng: -111.8910 },
