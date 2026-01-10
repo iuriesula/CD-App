@@ -73,6 +73,7 @@ export type ContractorWithDealerships = User & {
 };
 
 export type ContractorWithRelations = User & {
+  contractorDepartment: ContractorDepartment | null;
   contractorDealerships: (ContractorDealershipAccess & {
     dealership: Dealership;
   })[];
