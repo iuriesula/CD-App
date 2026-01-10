@@ -46,7 +46,7 @@ export default function EmailSignaturesPage() {
         router.push("/leads");
         return;
       }
-      setIsManager(data.session.role === "manager" || data.session.role === "agency_admin");
+      setIsManager(data.session.role !== "contractor");
       fetchSignatures();
     } catch (error) {
       router.push("/leads");
@@ -368,7 +368,7 @@ export default function EmailSignaturesPage() {
               </div>
 
               <div className="flex items-center justify-end gap-3 mt-6 pt-4 border-t">
-                <Button type="button" variant="outline" onClick={closeEditor} disabled={saving}>
+                <Button type="button" variant="secondary" onClick={closeEditor} disabled={saving}>
                   Cancel
                 </Button>
                 <Button type="submit" disabled={saving}>

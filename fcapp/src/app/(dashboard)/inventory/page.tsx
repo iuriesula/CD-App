@@ -247,12 +247,22 @@ export default function InventoryPage() {
           <h1 className="text-2xl font-bold text-gray-900">Inventory</h1>
           <p className="text-gray-600">{vehicles.length} vehicles</p>
         </div>
-        <Button onClick={openAddModal}>
-          <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
-          Add Vehicle
-        </Button>
+        <div className="flex gap-2">
+          <Link href="/inventory/import">
+            <Button variant="secondary">
+              <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+              </svg>
+              Import from Website
+            </Button>
+          </Link>
+          <Button onClick={openAddModal}>
+            <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            Add Vehicle
+          </Button>
+        </div>
       </div>
 
       <div className="mb-4 flex gap-2 flex-wrap">

@@ -54,6 +54,23 @@ async function main() {
 
   console.log(`Created admin user: ${admin.email}`);
 
+  // Create a dealership manager
+  const managerPassword = await bcrypt.hash("manager123", 12);
+  const manager = await prisma.user.upsert({
+    where: { email: "manager@classiccars.com" },
+    update: {},
+    create: {
+      email: "manager@classiccars.com",
+      passwordHash: managerPassword,
+      name: "Jane Manager",
+      role: "manager",
+      dealershipId: dealership.id,
+      voipExtension: "100",
+    },
+  });
+
+  console.log(`Created manager: ${manager.email}`);
+
   // Create a salesperson
   const salesPassword = await bcrypt.hash("sales123", 12);
   const salesperson = await prisma.user.upsert({
@@ -181,8 +198,9 @@ async function main() {
 
   console.log("\nSeed completed!");
   console.log("\nLogin credentials:");
-  console.log("  Admin: admin@fcapp.com / admin123");
-  console.log("  Sales: john@classiccars.com / sales123");
+  console.log("  Agency Admin: admin@fcapp.com / admin123");
+  console.log("  Dealership Manager: manager@classiccars.com / manager123");
+  console.log("  Salesperson: john@classiccars.com / sales123");
 }
 
 main()

@@ -47,11 +47,6 @@ export async function PUT(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Only managers and agency admins can update templates
-    if (session.role !== "manager" && !isAgencyAdmin(session.role)) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
-
     const { id } = await params;
 
     // Verify ownership
@@ -64,6 +59,19 @@ export async function PUT(
 
     if (!existing) {
       return NextResponse.json({ error: "Template not found" }, { status: 404 });
+    }
+
+    // Check permissions: users can only edit their own personal templates or dealership templates if manager
+    if (existing.userId) {
+      // Personal template - can only be edited by owner
+      if (existing.userId !== session.userId) {
+        return NextResponse.json({ error: "You can only edit your own templates" }, { status: 403 });
+      }
+    } else {
+      // Dealership-wide template - salespeople, managers, and agency admins can edit
+      if (session.role === "contractor") {
+        return NextResponse.json({ error: "Contractors cannot edit dealership-wide templates" }, { status: 403 });
+      }
     }
 
     const body = await request.json();
@@ -102,11 +110,6 @@ export async function DELETE(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Only managers and agency admins can delete templates
-    if (session.role !== "manager" && !isAgencyAdmin(session.role)) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
-
     const { id } = await params;
 
     // Verify ownership
@@ -119,6 +122,19 @@ export async function DELETE(
 
     if (!existing) {
       return NextResponse.json({ error: "Template not found" }, { status: 404 });
+    }
+
+    // Check permissions: users can only delete their own personal templates or dealership templates if manager
+    if (existing.userId) {
+      // Personal template - can only be deleted by owner
+      if (existing.userId !== session.userId) {
+        return NextResponse.json({ error: "You can only delete your own templates" }, { status: 403 });
+      }
+    } else {
+      // Dealership-wide template - salespeople, managers, and agency admins can delete
+      if (session.role === "contractor") {
+        return NextResponse.json({ error: "Contractors cannot delete dealership-wide templates" }, { status: 403 });
+      }
     }
 
     await prisma.emailTemplate.delete({

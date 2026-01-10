@@ -1,8 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import { verifyPassword, createToken, setAuthCookie } from "@/lib/auth";
+import { rateLimit } from "@/lib/rate-limit";
 
 export async function POST(request: NextRequest) {
+  // Rate limit: 5 login attempts per minute per IP
+  const rateLimitResult = await rateLimit(request, {
+    maxRequests: 5,
+    windowMs: 60 * 1000, // 1 minute
+  });
+
+  if (rateLimitResult) {
+    return rateLimitResult; // Returns 429 if rate limited
+  }
+
   try {
     const { email, password } = await request.json();
 

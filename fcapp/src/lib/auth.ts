@@ -3,12 +3,20 @@ import { cookies } from "next/headers";
 import bcrypt from "bcryptjs";
 import type { JWTPayload, AuthUser } from "@/types";
 import prisma from "@/lib/db";
+import { env } from "@/lib/env";
 
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "dev-secret-change-in-production-min-32-chars-long"
-);
+// Validate JWT_SECRET is properly configured
+if (!env.JWT_SECRET) {
+  throw new Error("JWT_SECRET is not configured");
+}
 
-const SESSION_DURATION = parseInt(process.env.SESSION_DURATION_DAYS || "7") * 24 * 60 * 60 * 1000;
+if (process.env.NODE_ENV === "production" && env.JWT_SECRET.length < 32) {
+  throw new Error("JWT_SECRET must be at least 32 characters long in production");
+}
+
+const JWT_SECRET = new TextEncoder().encode(env.JWT_SECRET);
+
+const SESSION_DURATION = parseInt(env.SESSION_DURATION_DAYS) * 24 * 60 * 60 * 1000;
 
 export async function hashPassword(password: string): Promise<string> {
   return bcrypt.hash(password, 12);
@@ -22,7 +30,7 @@ export async function createToken(payload: Omit<JWTPayload, "iat" | "exp">): Pro
   return new SignJWT(payload as Record<string, unknown>)
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
-    .setExpirationTime(`${process.env.SESSION_DURATION_DAYS || 7}d`)
+    .setExpirationTime(`${env.SESSION_DURATION_DAYS}d`)
     .sign(JWT_SECRET);
 }
 
@@ -55,6 +63,7 @@ export async function getSession(): Promise<AuthUser | null> {
       dealershipId: true,
       isActive: true,
       mustChangePassword: true,
+      contractorDepartment: true,
     },
   });
 
@@ -62,11 +71,13 @@ export async function getSession(): Promise<AuthUser | null> {
 
   return {
     id: user.id,
+    userId: user.id, // Alias for backwards compatibility
     email: user.email,
     name: user.name,
     role: user.role,
     dealershipId: user.dealershipId,
     mustChangePassword: user.mustChangePassword,
+    contractorDepartment: user.contractorDepartment,
   };
 }
 

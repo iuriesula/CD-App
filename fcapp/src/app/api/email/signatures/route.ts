@@ -66,10 +66,12 @@ export async function POST(request: NextRequest) {
     }
 
     // Check permissions for dealership-wide signatures
+    // Salespeople, managers, and agency admins can create dealership-wide signatures
+    // Only contractors are blocked
     if (!isPersonal) {
-      if (session.role !== "manager" && !isAgencyAdmin(session.role)) {
+      if (session.role === "contractor") {
         return NextResponse.json(
-          { error: "Only managers can create dealership-wide signatures" },
+          { error: "Contractors cannot create dealership-wide signatures" },
           { status: 403 }
         );
       }

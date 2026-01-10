@@ -54,8 +54,9 @@ export async function PUT(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Only managers and agency admins can update vehicles
-    if (session.role === "salesperson") {
+    // Salespeople, managers, and agency admins can update vehicles
+    // Contractors cannot update vehicles
+    if (session.role === "contractor") {
       return NextResponse.json(
         { error: "Insufficient permissions" },
         { status: 403 }
@@ -147,8 +148,9 @@ export async function DELETE(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Only managers and agency admins can delete vehicles
-    if (session.role === "salesperson") {
+    // Salespeople, managers, and agency admins can delete vehicles
+    // Contractors cannot delete vehicles
+    if (session.role === "contractor") {
       return NextResponse.json(
         { error: "Insufficient permissions" },
         { status: 403 }

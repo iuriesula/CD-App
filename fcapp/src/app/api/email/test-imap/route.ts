@@ -10,8 +10,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Only managers and admins can test connections
-    if (session.role !== "manager" && session.role !== "admin") {
+    // Only managers and agency admins can test connections
+    if (session.role !== "manager" && session.role !== "agency_admin") {
       return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 });
     }
 

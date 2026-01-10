@@ -73,16 +73,18 @@ export async function PUT(
     // Check permissions
     const isOwner = existing.userId === session.userId;
     const isDealershipWide = existing.userId === null;
-    const isManagerOrAdmin = session.role === "manager" || isAgencyAdmin(session.role);
+    const isContractor = session.role === "contractor";
 
-    if (isDealershipWide && !isManagerOrAdmin) {
+    // Contractors cannot update dealership-wide signatures
+    if (isDealershipWide && isContractor) {
       return NextResponse.json(
-        { error: "Only managers can update dealership-wide signatures" },
+        { error: "Contractors cannot update dealership-wide signatures" },
         { status: 403 }
       );
     }
 
-    if (!isDealershipWide && !isOwner && !isManagerOrAdmin) {
+    // Personal signatures can only be updated by owner (or managers/admins)
+    if (!isDealershipWide && !isOwner && session.role !== "manager" && !isAgencyAdmin(session.role)) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
@@ -155,16 +157,18 @@ export async function DELETE(
     // Check permissions
     const isOwner = existing.userId === session.userId;
     const isDealershipWide = existing.userId === null;
-    const isManagerOrAdmin = session.role === "manager" || isAgencyAdmin(session.role);
+    const isContractor = session.role === "contractor";
 
-    if (isDealershipWide && !isManagerOrAdmin) {
+    // Contractors cannot delete dealership-wide signatures
+    if (isDealershipWide && isContractor) {
       return NextResponse.json(
-        { error: "Only managers can delete dealership-wide signatures" },
+        { error: "Contractors cannot delete dealership-wide signatures" },
         { status: 403 }
       );
     }
 
-    if (!isDealershipWide && !isOwner && !isManagerOrAdmin) {
+    // Personal signatures can only be deleted by owner (or managers/admins)
+    if (!isDealershipWide && !isOwner && session.role !== "manager" && !isAgencyAdmin(session.role)) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 

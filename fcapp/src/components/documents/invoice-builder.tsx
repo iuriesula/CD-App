@@ -96,6 +96,11 @@ export function InvoiceBuilder({
   const [bankState, setBankState] = useState("");
   const [bankZip, setBankZip] = useState("");
 
+  // Wire transfer details
+  const [wireAccountName, setWireAccountName] = useState("");
+  const [wireAccountNumber, setWireAccountNumber] = useState("");
+  const [wireRoutingNumber, setWireRoutingNumber] = useState("");
+
   // LLC Info (separate from dealership)
   const [llcName, setLlcName] = useState(signedBuyersOrder?.llcName || "");
   const [dealerDisplayName, setDealerDisplayName] = useState(dealership.name);
@@ -487,6 +492,53 @@ export function InvoiceBuilder({
               </button>
             </div>
 
+            {paymentMethod === "wire" && (
+              <div className="mt-6 p-4 bg-gray-50 rounded-xl">
+                <h4 className="font-medium text-gray-900 mb-4">Wire Transfer Details</h4>
+                <p className="text-sm text-gray-500 mb-4">
+                  Enter your bank account information to receive wire transfers
+                </p>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Account Name
+                    </label>
+                    <input
+                      type="text"
+                      value={wireAccountName}
+                      onChange={(e) => setWireAccountName(e.target.value)}
+                      placeholder="e.g., ABC Motors LLC"
+                      className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
+                  </div>
+                  <div className="col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Bank Account Number
+                    </label>
+                    <input
+                      type="text"
+                      value={wireAccountNumber}
+                      onChange={(e) => setWireAccountNumber(e.target.value)}
+                      placeholder="Account number"
+                      className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
+                  </div>
+                  <div className="col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Routing Number
+                    </label>
+                    <input
+                      type="text"
+                      value={wireRoutingNumber}
+                      onChange={(e) => setWireRoutingNumber(e.target.value)}
+                      placeholder="9-digit routing number"
+                      className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
             {paymentMethod === "cashiers_check" && (
               <div className="mt-6 p-4 bg-gray-50 rounded-xl">
                 <h4 className="font-medium text-gray-900 mb-4">Bank Branch Information</h4>
@@ -789,10 +841,10 @@ export function InvoiceBuilder({
       ? `
         <h3>Wire Transfer Instructions</h3>
         <p>Please wire payment to:</p>
-        <p><strong>${getLlcFullName()}</strong></p>
-        ${llcAddress ? `<p>${llcAddress}</p>` : ""}
-        <p>${[llcCity, llcState, llcZip].filter(Boolean).join(", ")}</p>
-        <p class="note">Contact us for bank routing details.</p>
+        ${wireAccountName ? `<p><strong>Account Name:</strong> ${wireAccountName}</p>` : `<p><strong>${getLlcFullName()}</strong></p>`}
+        ${wireAccountNumber ? `<p><strong>Account Number:</strong> ${wireAccountNumber}</p>` : ""}
+        ${wireRoutingNumber ? `<p><strong>Routing Number:</strong> ${wireRoutingNumber}</p>` : ""}
+        ${llcAddress ? `<p class="note" style="margin-top: 12px;">Payee Address: ${llcAddress}, ${[llcCity, llcState, llcZip].filter(Boolean).join(", ")}</p>` : ""}
       `
       : `
         <h3>Cashier's Check Instructions</h3>
@@ -1290,6 +1342,41 @@ export function InvoiceBuilder({
                   </label>
                 </div>
 
+                {paymentMethod === "wire" && (
+                  <div className="grid grid-cols-2 gap-4 p-4 bg-gray-50 rounded-lg">
+                    <div className="col-span-2">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Account Name</label>
+                      <input
+                        type="text"
+                        value={wireAccountName}
+                        onChange={(e) => setWireAccountName(e.target.value)}
+                        placeholder="e.g., ABC Motors LLC"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                      />
+                    </div>
+                    <div className="col-span-2">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Bank Account Number</label>
+                      <input
+                        type="text"
+                        value={wireAccountNumber}
+                        onChange={(e) => setWireAccountNumber(e.target.value)}
+                        placeholder="Account number"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                      />
+                    </div>
+                    <div className="col-span-2">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Routing Number</label>
+                      <input
+                        type="text"
+                        value={wireRoutingNumber}
+                        onChange={(e) => setWireRoutingNumber(e.target.value)}
+                        placeholder="9-digit routing number"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                      />
+                    </div>
+                  </div>
+                )}
+
                 {paymentMethod === "cashiers_check" && (
                   <div className="grid grid-cols-2 gap-4 p-4 bg-gray-50 rounded-lg">
                     <div className="col-span-2">
@@ -1695,12 +1782,14 @@ export function InvoiceBuilder({
                       <p className="text-sm text-gray-600">
                         Please wire payment to:
                       </p>
-                      <p className="text-sm font-medium text-gray-900 mt-1">{getLlcFullName()}</p>
-                      {llcAddress && <p className="text-sm text-gray-600">{llcAddress}</p>}
-                      <p className="text-sm text-gray-600">
-                        {[llcCity, llcState, llcZip].filter(Boolean).join(", ")}
-                      </p>
-                      <p className="text-sm text-gray-500 italic mt-2">Contact us for bank routing details.</p>
+                      {wireAccountName && <p className="text-sm text-gray-600 mt-1"><strong>Account Name:</strong> {wireAccountName}</p>}
+                      {wireAccountNumber && <p className="text-sm text-gray-600"><strong>Account Number:</strong> {wireAccountNumber}</p>}
+                      {wireRoutingNumber && <p className="text-sm text-gray-600"><strong>Routing Number:</strong> {wireRoutingNumber}</p>}
+                      {llcAddress && (
+                        <p className="text-sm text-gray-500 italic mt-2">
+                          Payee Address: {llcAddress}, {[llcCity, llcState, llcZip].filter(Boolean).join(", ")}
+                        </p>
+                      )}
                     </>
                   ) : (
                     <>

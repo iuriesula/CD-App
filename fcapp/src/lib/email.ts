@@ -1,5 +1,6 @@
 import nodemailer from "nodemailer";
 import type { Transporter } from "nodemailer";
+import type SMTPTransport from "nodemailer/lib/smtp-transport";
 import type { Dealership } from "@prisma/client";
 import dns from "dns";
 
@@ -62,16 +63,14 @@ export function createSmtpTransporter(dealership: Dealership): Transporter | nul
   return nodemailer.createTransport({
     host: dealership.smtpHost,
     port: dealership.smtpPort || 587,
-    secure: dealership.smtpSecure,
+    secure: dealership.smtpSecure ?? false,
     auth: {
       user: dealership.smtpUser,
       pass: dealership.smtpPassword,
     },
-    // Use IPv4 preference which helps with some DNS issues
-    family: 4,
     // Connection timeout
     connectionTimeout: 10000,
-  });
+  } as SMTPTransport.Options);
 }
 
 /**
@@ -146,11 +145,9 @@ export async function testSmtpConnection(config: EmailConfig): Promise<{ success
         user: config.user,
         pass: config.password,
       },
-      // Use IPv4 preference which helps with some DNS issues
-      family: 4,
       // Connection timeout
       connectionTimeout: 10000,
-    });
+    } as SMTPTransport.Options);
 
     await transporter.verify();
     return { success: true };

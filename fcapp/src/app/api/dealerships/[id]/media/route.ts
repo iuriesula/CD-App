@@ -62,14 +62,13 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
   const { id: dealershipId } = await context.params;
 
-  // Verify user belongs to this dealership and has permission
+  // Verify user belongs to this dealership
   if (session.dealershipId !== dealershipId && session.role !== "agency_admin") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  if (session.role !== "manager" && session.role !== "agency_admin") {
-    return NextResponse.json({ error: "Only managers can upload media" }, { status: 403 });
-  }
+  // All authenticated users can upload media (salespeople, tech, content creators, managers, admins)
+  // This allows salespeople to upload car photos and other media
 
   try {
     const formData = await request.formData();
@@ -196,9 +195,7 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  if (session.role !== "manager" && session.role !== "agency_admin") {
-    return NextResponse.json({ error: "Only managers can modify media" }, { status: 403 });
-  }
+  // All authenticated users can rename/move media
 
   try {
     const body = await request.json();
@@ -253,9 +250,7 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  if (session.role !== "manager" && session.role !== "agency_admin") {
-    return NextResponse.json({ error: "Only managers can delete media" }, { status: 403 });
-  }
+  // All authenticated users can delete media
 
   const { searchParams } = new URL(request.url);
   const mediaId = searchParams.get("mediaId");
@@ -272,27 +267,26 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
     return NextResponse.json({ error: "Media not found" }, { status: 404 });
   }
 
-  // If deleting a folder, check if it's empty
+  // If deleting a folder, recursively delete all contents
   if (media.type === "folder") {
     // Build the folder path for items inside this folder
     const folderPath = media.folder ? `${media.folder}/${media.name}` : media.name;
 
-    const itemsInFolder = await prisma.dealershipMedia.count({
+    // Delete all items in this folder and nested subfolders
+    // This includes both direct children (folder = folderPath)
+    // and nested children (folder starts with folderPath/)
+    await prisma.dealershipMedia.deleteMany({
       where: {
         dealershipId,
-        folder: folderPath,
+        OR: [
+          { folder: folderPath },
+          { folder: { startsWith: `${folderPath}/` } },
+        ],
       },
     });
-
-    if (itemsInFolder > 0) {
-      return NextResponse.json(
-        { error: "Cannot delete folder that contains items. Move or delete contents first." },
-        { status: 400 }
-      );
-    }
   }
 
-  // Delete from database
+  // Delete the item (file or folder) from database
   await prisma.dealershipMedia.delete({
     where: { id: mediaId },
   });

@@ -80,8 +80,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Only managers and agency admins can add vehicles
-    if (session.role === "salesperson") {
+    // Salespeople, managers, and agency admins can add vehicles
+    // Contractors cannot add vehicles
+    if (session.role === "contractor") {
       return NextResponse.json(
         { error: "Insufficient permissions" },
         { status: 403 }

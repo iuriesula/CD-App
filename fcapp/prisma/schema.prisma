@@ -13,6 +13,27 @@ enum UserRole {
   tech
   content_creator
   agency_admin
+  contractor
+}
+
+enum ContractorDepartment {
+  it
+  marketing
+  content
+}
+
+enum RequestStatus {
+  open
+  in_progress
+  resolved
+  closed
+}
+
+enum RequestPriority {
+  low
+  normal
+  high
+  urgent
 }
 
 enum LeadStage {
@@ -42,6 +63,7 @@ enum LeadSource {
 enum ActivityType {
   email_sent
   email_received
+  email_linked
   call_outbound
   call_inbound
   call_missed
@@ -77,6 +99,15 @@ enum VehicleStatus {
   pending
   sold
   reserved
+}
+
+enum ImportJobStatus {
+  pending
+  discovering
+  importing
+  completed
+  failed
+  cancelled
 }
 
 // Models
@@ -123,17 +154,24 @@ model Dealership {
   // Lead assignment round-robin tracking
   lastLeadAssignedToId String? @map("last_lead_assigned_to_id")
 
-  users                User[]
-  leads                Lead[]
-  tasks                Task[]
-  documents            Document[]
-  emails               Email[]
-  callLogs             CallLog[]
-  vehicles             Vehicle[]
-  metaCampaignMappings MetaCampaignMapping[]
-  emailTemplates       EmailTemplate[]
-  emailSignatures      EmailSignature[]
-  media                DealershipMedia[]
+  // Website import configuration
+  websiteListingPath String?   @map("website_listing_path") // e.g., "/listing/"
+  lastImportAt       DateTime? @map("last_import_at")
+
+  users                      User[]
+  leads                      Lead[]
+  tasks                      Task[]
+  documents                  Document[]
+  emails                     Email[]
+  callLogs                   CallLog[]
+  vehicles                   Vehicle[]
+  metaCampaignMappings       MetaCampaignMapping[]
+  emailTemplates             EmailTemplate[]
+  emailSignatures            EmailSignature[]
+  media                      DealershipMedia[]
+  contractorAccess           ContractorDealershipAccess[] @relation("DealershipContractors")
+  requests                   Request[]
+  importJobs                 WebsiteImportJob[]
 
   @@map("dealerships")
 }
@@ -169,13 +207,22 @@ model User {
   createdAt          DateTime   @default(now()) @map("created_at")
   updatedAt          DateTime   @updatedAt @map("updated_at")
 
-  dealership      Dealership?      @relation(fields: [dealershipId], references: [id])
-  leads           Lead[]           @relation("AssignedLeads")
-  activities      Activity[]
-  tasks           Task[]
-  emails          Email[]
-  callLogs        CallLog[]
-  emailSignatures EmailSignature[]
+  // Contractor-specific fields
+  contractorDepartment ContractorDepartment? @map("contractor_department")
+
+  dealership               Dealership?                   @relation(fields: [dealershipId], references: [id])
+  leads                    Lead[]                        @relation("AssignedLeads")
+  activities               Activity[]
+  tasks                    Task[]
+  emails                   Email[]
+  callLogs                 CallLog[]
+  emailSignatures          EmailSignature[]
+  emailTemplates           EmailTemplate[]
+  contractorDealerships    ContractorDealershipAccess[]  @relation("ContractorAccess")
+  requestsCreated          Request[]                     @relation("RequestCreator")
+  requestsAssigned         Request[]                     @relation("AssignedContractor")
+  requestMessages          RequestMessage[]
+  importJobs               WebsiteImportJob[]
 
   @@map("users")
 }
@@ -396,6 +443,7 @@ model CallLog {
 model EmailTemplate {
   id           String   @id @default(uuid())
   dealershipId String   @map("dealership_id")
+  userId       String?  @map("user_id") // NULL = dealership-wide, set = personal template
 
   name        String
   subject     String
@@ -409,8 +457,10 @@ model EmailTemplate {
   updatedAt   DateTime @updatedAt @map("updated_at")
 
   dealership  Dealership @relation(fields: [dealershipId], references: [id])
+  user        User?      @relation(fields: [userId], references: [id])
 
   @@index([dealershipId])
+  @@index([userId])
   @@map("email_templates")
 }
 
@@ -476,6 +526,10 @@ model Vehicle {
   technicalBulletpoints String?  @map("technical_bulletpoints")
   callScript            String?  @map("call_script")
 
+  // Import tracking
+  sourceUrl    String?       @map("source_url")    // Original listing URL if imported
+  importedAt   DateTime?     @map("imported_at")   // When imported from website
+
   // Timestamps
   createdAt    DateTime      @default(now()) @map("created_at")
   updatedAt    DateTime      @updatedAt @map("updated_at")
@@ -488,4 +542,121 @@ model Vehicle {
   @@index([status])
   @@index([make, model])
   @@map("vehicles")
+}
+
+// Contractor System Models
+model ContractorDealershipAccess {
+  id           String   @id @default(uuid())
+  contractorId String   @map("contractor_id")
+  dealershipId String   @map("dealership_id")
+  assignedAt   DateTime @default(now()) @map("assigned_at")
+  assignedBy   String?  @map("assigned_by") // User ID who assigned this access
+
+  contractor User       @relation("ContractorAccess", fields: [contractorId], references: [id], onDelete: Cascade)
+  dealership Dealership @relation("DealershipContractors", fields: [dealershipId], references: [id], onDelete: Cascade)
+
+  @@unique([contractorId, dealershipId])
+  @@index([contractorId])
+  @@index([dealershipId])
+  @@map("contractor_dealership_access")
+}
+
+model Request {
+  id           String              @id @default(uuid())
+  dealershipId String              @map("dealership_id")
+  department   ContractorDepartment
+  title        String
+  description  String              @db.Text
+  priority     RequestPriority     @default(normal)
+  status       RequestStatus       @default(open)
+
+  requestedById String?  @map("requested_by_id")
+  assignedToId  String?  @map("assigned_to_id")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  closedAt  DateTime? @map("closed_at")
+
+  dealership     Dealership         @relation(fields: [dealershipId], references: [id], onDelete: Cascade)
+  requestedBy    User?              @relation("RequestCreator", fields: [requestedById], references: [id], onDelete: SetNull)
+  assignedTo     User?              @relation("AssignedContractor", fields: [assignedToId], references: [id], onDelete: SetNull)
+  messages       RequestMessage[]
+  attachments    RequestAttachment[]
+
+  @@index([dealershipId])
+  @@index([department])
+  @@index([status])
+  @@index([assignedToId])
+  @@index([createdAt])
+  @@map("requests")
+}
+
+model RequestMessage {
+  id        String   @id @default(uuid())
+  requestId String   @map("request_id")
+  userId    String   @map("user_id")
+  message   String   @db.Text
+  isRead    Boolean  @default(false) @map("is_read")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  request     Request             @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  user        User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  attachments RequestAttachment[]
+
+  @@index([requestId])
+  @@index([createdAt])
+  @@map("request_messages")
+}
+
+model RequestAttachment {
+  id        String   @id @default(uuid())
+  requestId String   @map("request_id")
+  messageId String?  @map("message_id") // Nullable - can attach to request directly or to a message
+  fileName  String   @map("file_name")
+  fileUrl   String   @map("file_url")
+  mimeType  String   @map("mime_type")
+  size      Int      // File size in bytes
+  uploadedAt DateTime @default(now()) @map("uploaded_at")
+
+  request Request         @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  message RequestMessage? @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([requestId])
+  @@index([messageId])
+  @@map("request_attachments")
+}
+
+// Website Import System
+model WebsiteImportJob {
+  id           String          @id @default(uuid())
+  dealershipId String          @map("dealership_id")
+  userId       String          @map("user_id")
+
+  status       ImportJobStatus @default(pending)
+  websiteUrl   String          @map("website_url")
+  listingPath  String          @default("/listing/") @map("listing_path")
+
+  // Progress tracking
+  totalVehicles  Int?   @map("total_vehicles")
+  processedCount Int    @default(0) @map("processed_count")
+  createdCount   Int    @default(0) @map("created_count")
+  updatedCount   Int    @default(0) @map("updated_count")
+  skippedCount   Int    @default(0) @map("skipped_count")
+  errorCount     Int    @default(0) @map("error_count")
+
+  // Detailed logs and errors (JSON arrays)
+  logs   Json @default("[]")
+  errors Json @default("[]")
+
+  // Timestamps
+  startedAt   DateTime? @map("started_at")
+  completedAt DateTime? @map("completed_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  dealership Dealership @relation(fields: [dealershipId], references: [id], onDelete: Cascade)
+  user       User       @relation(fields: [userId], references: [id])
+
+  @@index([dealershipId])
+  @@index([status])
+  @@map("website_import_jobs")
 }

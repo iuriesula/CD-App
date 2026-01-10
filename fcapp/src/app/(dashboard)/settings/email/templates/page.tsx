@@ -65,7 +65,7 @@ export default function EmailTemplatesPage() {
         router.push("/leads");
         return;
       }
-      if (data.session.role !== "manager" && data.session.role !== "agency_admin") {
+      if (data.session.role === "contractor") {
         router.push("/leads");
         return;
       }
@@ -454,7 +454,7 @@ export default function EmailTemplatesPage() {
               </div>
 
               <div className="flex items-center justify-end gap-3 mt-6 pt-4 border-t">
-                <Button type="button" variant="outline" onClick={closeEditor} disabled={saving}>
+                <Button type="button" variant="secondary" onClick={closeEditor} disabled={saving}>
                   Cancel
                 </Button>
                 <Button type="submit" disabled={saving}>

@@ -14,7 +14,13 @@ Database Schema
 sql-- Multi-tenancy: Every query filters by dealership_id
 -- Agency admin role bypasses dealership filter for analytics
 
-CREATE TYPE user_role AS ENUM ('salesperson', 'manager', 'agency_admin');
+CREATE TYPE user_role AS ENUM ('salesperson', 'manager', 'agency_admin', 'contractor');
+
+CREATE TYPE contractor_department AS ENUM ('IT', 'Marketing', 'Content');
+
+CREATE TYPE request_status AS ENUM ('open', 'in_progress', 'resolved', 'closed');
+
+CREATE TYPE request_priority AS ENUM ('low', 'normal', 'high', 'urgent');
 
 CREATE TYPE lead_stage AS ENUM (
   'new_lead',
@@ -83,19 +89,82 @@ CREATE TABLE dealerships (
   updated_at TIMESTAMP DEFAULT NOW()
 );
 
--- Users (salespeople, managers, agency admin)
+-- Users (salespeople, managers, agency admin, contractors)
 CREATE TABLE users (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  dealership_id UUID REFERENCES dealerships(id),  -- NULL for agency_admin
+  dealership_id UUID REFERENCES dealerships(id),  -- NULL for agency_admin and contractors
   email VARCHAR(255) UNIQUE NOT NULL,
   password_hash VARCHAR(255) NOT NULL,
   name VARCHAR(255) NOT NULL,
   role user_role NOT NULL DEFAULT 'salesperson',
   voip_extension VARCHAR(20),
   is_active BOOLEAN DEFAULT true,
+  contractor_department contractor_department,  -- Only for contractors
   created_at TIMESTAMP DEFAULT NOW(),
   updated_at TIMESTAMP DEFAULT NOW()
 );
+
+-- Contractor-Dealership Access (many-to-many)
+CREATE TABLE contractor_dealerships (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  contractor_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  dealership_id UUID NOT NULL REFERENCES dealerships(id) ON DELETE CASCADE,
+  created_at TIMESTAMP DEFAULT NOW(),
+  UNIQUE(contractor_id, dealership_id)
+);
+
+CREATE INDEX idx_contractor_dealerships_contractor ON contractor_dealerships(contractor_id);
+CREATE INDEX idx_contractor_dealerships_dealership ON contractor_dealerships(dealership_id);
+
+-- Requests/Tickets
+CREATE TABLE requests (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  dealership_id UUID NOT NULL REFERENCES dealerships(id) ON DELETE CASCADE,
+  created_by UUID NOT NULL REFERENCES users(id),
+  assigned_to UUID REFERENCES users(id),
+
+  title VARCHAR(255) NOT NULL,
+  description TEXT NOT NULL,
+  department contractor_department NOT NULL,
+  priority request_priority NOT NULL DEFAULT 'normal',
+  status request_status NOT NULL DEFAULT 'open',
+
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW(),
+  resolved_at TIMESTAMP,
+  closed_at TIMESTAMP
+);
+
+CREATE INDEX idx_requests_dealership ON requests(dealership_id);
+CREATE INDEX idx_requests_department ON requests(department);
+CREATE INDEX idx_requests_status ON requests(status);
+CREATE INDEX idx_requests_assigned ON requests(assigned_to);
+
+-- Request Messages (conversation thread)
+CREATE TABLE request_messages (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  request_id UUID NOT NULL REFERENCES requests(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES users(id),
+
+  message TEXT NOT NULL,
+  attachment_path TEXT,
+  attachment_name VARCHAR(255),
+
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX idx_request_messages_request ON request_messages(request_id);
+
+-- Request Message Reads (read receipts)
+CREATE TABLE request_message_reads (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  message_id UUID NOT NULL REFERENCES request_messages(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES users(id),
+  read_at TIMESTAMP DEFAULT NOW(),
+  UNIQUE(message_id, user_id)
+);
+
+CREATE INDEX idx_request_message_reads_message ON request_message_reads(message_id);
 
 -- Leads (the core entity)
 CREATE TABLE leads (
@@ -437,6 +506,52 @@ When lead responds with interest (salesperson marks "Responded"):
 - Geographic breakdown (which states produce buyers)
 - Lead volume over time
 
+### 5. Requests/Tickets Module
+
+**Route:** `/requests`
+
+**Purpose:** Dealership-contractor communication and task management
+
+**Available to:** All users (filtered by role and permissions)
+
+**Layout:**
+- List view with request cards
+- Filters: Status, Department, Priority
+- Click card → Request detail with conversation thread
+
+**Request Detail:**
+
+**Header:**
+- Title, department badge, priority badge, status badge
+- Created by, assigned to, timestamps
+- Status update dropdown (role-based permissions)
+- Assign/Unassign contractor button
+
+**Conversation Thread:**
+- Chronological message list
+- Each message shows: sender, timestamp, message content
+- File attachments display with download links
+- Read receipts: "Read by [names]" below each message
+- Real-time updates (30 second polling)
+
+**Message Input:**
+- Text area for new messages
+- File attachment button (images, PDFs, documents)
+- Send button
+
+**Actions:**
+- Add message to thread
+- Upload file attachment
+- Change status (based on role)
+- Assign to contractor
+- Mark as resolved/closed
+
+**Contractor View Differences:**
+- See only requests for their department
+- Can assign themselves to unassigned requests
+- Update status as they work
+- Add progress updates and file attachments
+
 ---
 
 ## API Routes (Next.js API or separate Express)
@@ -465,6 +580,35 @@ POST   /api/users                    # Create user (admin or manager)
 GET    /api/users/:id
 PUT    /api/users/:id
 DELETE /api/users/:id
+```
+
+### Contractors
+```
+GET    /api/contractors                            # List all contractors
+POST   /api/contractors                            # Create contractor
+GET    /api/contractors/:id                        # Get contractor details
+PUT    /api/contractors/:id                        # Update contractor
+DELETE /api/contractors/:id                        # Delete contractor
+GET    /api/contractors/:id/dealerships            # Get assigned dealerships
+POST   /api/contractors/:id/dealerships            # Assign dealerships
+DELETE /api/contractors/:id/dealerships/:dealershipId  # Remove assignment
+```
+
+### Requests
+```
+GET    /api/requests                               # List requests (filtered by role)
+POST   /api/requests                               # Create request
+GET    /api/requests/:id                           # Get request details
+PUT    /api/requests/:id                           # Update request
+DELETE /api/requests/:id                           # Delete request
+PUT    /api/requests/:id/status                    # Update status
+PUT    /api/requests/:id/assign                    # Assign contractor
+GET    /api/requests/:id/messages                  # Get conversation thread
+POST   /api/requests/:id/messages                  # Add message to thread
+PUT    /api/requests/:id/messages/:messageId/read  # Mark message as read
+POST   /api/requests/:id/attachments               # Upload attachment
+GET    /api/requests/stats                         # Get request statistics
+GET    /api/contractors/:id/requests               # Get contractor's requests
 ```
 
 ### Leads
@@ -626,50 +770,364 @@ json{
 
 ---
 
+## Recent Improvements (Dec 19-22, 2024)
+
+### Quick Wins Completed (Dec 19-22)
+
+1. **Email Threading Enhancement** (Dec 19)
+   - Implemented automatic email threading for lead conversations
+   - Emails properly use In-Reply-To headers to maintain conversation threads
+   - Replying to a lead automatically continues the existing email thread
+
+2. **Email Composer Size Increase** (Dec 19)
+   - Increased modal width from `max-w-4xl` to `max-w-5xl`
+   - Increased modal height from `max-h-[90vh]` to `max-h-[95vh]`
+   - Increased textarea height from `min-h-[350px]` to `min-h-[500px]`
+   - Reduces scrolling when composing long emails
+
+3. **Invoice Wire Transfer Details** (Dec 19)
+   - Added fields for account name, account number, and routing number
+   - Wire transfer instructions display complete banking information
+   - Available in both wizard mode and full form mode
+   - Shows in PDF print output with proper formatting
+
+4. **Media Folder Recursive Deletion** (Dec 19)
+   - Folders can now be deleted even when they contain files and subfolders
+   - Automatically deletes all nested contents recursively
+   - No need to manually empty folders before deletion
+
+5. **Email Undo Feature** (Dec 19)
+   - 10-second delay before sending emails (like Gmail/Titan)
+   - Toast notification with countdown timer
+   - One-click "Undo" button to cancel send
+   - Restores email content when undone
+   - Prevents accidental sends
+
+6. **Email Module Access for Salespeople - COMPLETED** (Dec 22)
+   - **Expanded Permissions**
+     - Salespeople can now access Settings → Email module (previously manager-only)
+     - Salespeople can create personal email templates
+     - Salespeople can create dealership-wide signatures and templates
+     - Contractors excluded from email module access
+   - **Enhanced Email Composer**
+     - Auto-insert default signature when composer opens
+     - Visual signature separator (---) for clarity
+     - Compact signature button in footer (replaced large dropdown)
+     - Easy signature switching via dropdown menu
+     - Real-time signature preview while composing
+   - **Bug Fixes**
+     - Fixed 15 Button component variants across 7 files (changed invalid `variant="outline"` to `variant="secondary"`)
+
+7. **Phase 3: Contractor System & Requests - COMPLETED** (Dec 22)
+   - **Contractor Role System**
+     - New `contractor` user role with department specialization
+     - Three departments: IT (full access), Marketing (leads/email), Content (media/inventory)
+     - Multi-dealership assignment (many-to-many relationship)
+     - Dealership selector in navigation (like agency admin)
+     - Department-based permission system
+   - **Request/Ticket System**
+     - Create requests with department, priority, and file attachments
+     - Full conversation threads with real-time updates
+     - Read receipts showing who viewed messages
+     - Status workflow: Open → In Progress → Resolved → Closed
+     - Priority levels: Low, Normal, High, Urgent with color-coded badges
+     - Request assignment to contractors
+     - Filter by status, department, and dealership
+     - File attachment support in messages
+   - **Contractor Management UI**
+     - Admin interface to create and manage contractors
+     - Assign/unassign dealerships
+     - Track contractor workload
+     - Department badges for easy identification
+
+8. **Media Module Enhancements - COMPLETED** (Dec 22)
+   - **Image Viewer with Zoom, Pan, and Navigation**
+     - Full-screen modal viewer with zoom 0.25x to 5x
+     - Pan/drag when zoomed (grab cursor feedback)
+     - Keyboard shortcuts: arrow keys for navigation, +/- for zoom, Esc to close
+     - Next/Previous navigation buttons
+     - Download functionality
+     - Image dimensions and position display
+   - **Folder Upload Support**
+     - Upload entire folders preserving nested structure
+     - Recursive folder creation
+     - Maintains folder hierarchy and path structure
+     - Batch file upload capability
+   - **Insert Images into Email Composer**
+     - Media picker modal with search functionality
+     - Multi-select images from media library
+     - Images render as visual thumbnails in email body (Gmail-style)
+     - Available in both lead detail and main email module
+     - Maintains text direction and formatting
+
+---
+
+## Contractor System & Request Management
+
+### Overview
+
+Phase 3 introduces a contractor role system and request/ticket module for dealerships to collaborate with external contractors (IT, Marketing, Content).
+
+### User Roles & Departments
+
+**Contractor Role:**
+- External service providers with specialized department access
+- Can be assigned to multiple dealerships
+- Department determines permissions and visibility
+
+**Contractor Departments:**
+
+| Department | Access Permissions |
+|-----------|-------------------|
+| **IT** | Settings, Users, Media, Email, Inventory, Dealership Config |
+| **Content** | Media, Inventory |
+| **Marketing** | Leads, Email Templates, Media |
+
+### For Agency Admins
+
+**Managing Contractors:**
+
+1. Navigate to **Admin > Contractors**
+2. Click **"Create Contractor"** button
+3. Fill in contractor details:
+   - Name and email
+   - Select department (IT, Marketing, Content)
+   - Set password
+4. Click **"Assign Dealerships"** to grant access
+5. Select one or more dealerships
+6. Monitor contractor activity in dashboard
+
+**Contractor Management Features:**
+- View all contractors with department badges
+- Edit contractor information and department
+- Reassign dealerships
+- Deactivate contractor accounts
+- Track contractor request workload
+
+### For Dealership Users
+
+**Creating Requests:**
+
+1. Navigate to **Requests** in sidebar
+2. Click **"New Request"** button
+3. Fill in request details:
+   - **Title**: Brief description
+   - **Description**: Full details of the request
+   - **Department**: IT, Marketing, or Content
+   - **Priority**: Low, Normal, High, or Urgent
+   - **Attachments** (optional): Upload files
+4. Submit request
+
+**Managing Requests:**
+
+- View all requests in list with filters
+- Filter by status (Open, In Progress, Resolved, Closed)
+- Filter by department
+- Click request to view full conversation thread
+- Add messages to conversation
+- Attach additional files as needed
+- Mark as resolved when complete
+- Reopen if issue persists
+
+**Request Features:**
+- Real-time conversation threads
+- File attachments (images, documents)
+- Read receipts showing who has viewed messages
+- Priority badges for urgent items
+- Status tracking through workflow
+
+### For Contractors
+
+**Switching Between Dealerships:**
+
+- Use dealership selector in top navigation
+- Switches to selected dealership's context
+- View requests specific to that dealership
+
+**Working with Requests:**
+
+1. Navigate to **Requests** in sidebar
+2. View requests filtered to your department
+3. Click on unassigned request
+4. Click **"Assign to Me"** to take ownership
+5. Update status to **"In Progress"**
+6. Respond in conversation thread
+7. Upload work files or screenshots
+8. Update status to **"Resolved"** when complete
+9. Close request after client confirmation
+
+**Contractor Workflow:**
+
+- **Open**: New requests awaiting assignment
+- **In Progress**: Actively working on request
+- **Resolved**: Work complete, pending client approval
+- **Closed**: Request fully complete and approved
+
+**Best Practices:**
+- Respond to requests within 24 hours
+- Update status regularly to keep clients informed
+- Use attachments to show progress
+- Mark resolved only when work is complete
+- Close requests after client confirms satisfaction
+
+### Request Priority Levels
+
+| Priority | Description | Badge Color |
+|---------|-------------|------------|
+| **Low** | Non-urgent, can be handled in normal schedule | Gray |
+| **Normal** | Standard priority, handle in regular queue | Blue |
+| **High** | Important, prioritize in daily work | Orange |
+| **Urgent** | Critical issue, immediate attention required | Red |
+
+### API Endpoints
+
+**Contractor Management** (8 endpoints):
+- `GET /api/contractors` - List contractors
+- `POST /api/contractors` - Create contractor
+- `GET /api/contractors/:id` - Get contractor details
+- `PUT /api/contractors/:id` - Update contractor
+- `DELETE /api/contractors/:id` - Delete contractor
+- `GET /api/contractors/:id/dealerships` - Get assigned dealerships
+- `POST /api/contractors/:id/dealerships` - Assign dealerships
+- `DELETE /api/contractors/:id/dealerships/:dealershipId` - Remove assignment
+
+**Request System** (13 endpoints):
+- `GET /api/requests` - List requests (filtered by role)
+- `POST /api/requests` - Create request
+- `GET /api/requests/:id` - Get request details
+- `PUT /api/requests/:id` - Update request
+- `DELETE /api/requests/:id` - Delete request
+- `PUT /api/requests/:id/status` - Update status
+- `PUT /api/requests/:id/assign` - Assign contractor
+- `GET /api/requests/:id/messages` - Get conversation
+- `POST /api/requests/:id/messages` - Add message
+- `PUT /api/requests/:id/messages/:messageId/read` - Mark read
+- `POST /api/requests/:id/attachments` - Upload attachment
+- `GET /api/requests/stats` - Get statistics
+- `GET /api/contractors/:id/requests` - Get contractor's requests
+
+For detailed API documentation, see `CONTRACTOR_API_REFERENCE.md`.
+
+---
+
 ## Development Phases
 
-### Phase 1: Core CRM (Priority - MVP)
+### Phase 1: Core CRM (Priority - MVP) ✅ COMPLETED
 
 **Goal:** Replace paper, get salespeople using it
 
-- [ ] Project setup (Next.js, TypeScript, PostgreSQL, Prisma/Drizzle)
-- [ ] Database schema creation
-- [ ] Auth system (login, sessions, role-based access)
-- [ ] Dealership CRUD (admin only)
-- [ ] User CRUD (admin/manager)
-- [ ] Lead CRUD with deduplication
-- [ ] Pipeline board (Kanban with drag-drop)
-- [ ] Lead detail page
-- [ ] Activity logging (manual - "I called", "I emailed" buttons)
-- [ ] Task system with auto-generation
-- [ ] "My Day" task list view
-- [ ] Follow-up cadence logic (the 5-attempt system)
+- [x] Project setup (Next.js, TypeScript, PostgreSQL, Prisma)
+- [x] Database schema creation
+- [x] Auth system (login, sessions, JWT-based)
+- [x] Dealership CRUD (admin only)
+- [x] User CRUD (admin/manager)
+- [x] Lead CRUD with deduplication
+- [x] Pipeline board (Kanban with drag-drop)
+- [x] Lead detail page
+- [x] Activity logging (manual - "I called", "I emailed" buttons)
+- [x] Task system with auto-generation
+- [x] "My Day" task list view
+- [x] Follow-up cadence logic (the 5-attempt system)
 
-### Phase 2: Communications
+### Phase 2: Communications ✅ COMPLETED
 
 **Goal:** Call and email from within the app
 
-- [ ] Yate PBX service setup
-- [ ] Yate API bridge
-- [ ] Click-to-call from app
-- [ ] Call logging (auto-save to activities)
-- [ ] Incoming call popup with lead lookup
-- [ ] Email integration (IMAP/SMTP)
-- [ ] In-app email compose
-- [ ] In-app inbox
-- [ ] Email-to-lead auto-linking
-- [ ] Email open tracking
+- [x] Email integration (IMAP/SMTP)
+- [x] In-app email compose with templates and signatures
+- [x] In-app inbox
+- [x] Email-to-lead auto-linking
+- [x] Email open tracking
+- [x] **Email threading** - Automatic conversation threading with In-Reply-To headers
+- [x] Email folder management (inbox, spam, trash, important)
+- [ ] Yate PBX service setup (planned for future)
+- [ ] Click-to-call from app (planned for future)
+- [ ] Call logging (planned for future)
+- [ ] Incoming call popup with lead lookup (planned for future)
 
-### Phase 3: Documents
+### Phase 2.5: Media Management ✅ COMPLETED (Dec 22, 2024)
+
+**Goal:** Organize and manage dealership media assets
+
+- [x] Media folder structure with nested folders
+- [x] File upload with drag-and-drop support
+- [x] **Folder upload** - Upload entire folders preserving structure (Dec 22)
+- [x] Grid and list view modes
+- [x] **Image viewer with zoom** - Full-screen modal with pan, drag-to-pan, keyboard navigation (Dec 22)
+  - Zoom: 0.25x to 5x with +/- keys or buttons
+  - Pan: Click-drag when zoomed, arrow keys for navigation
+  - Download button, image dimensions display
+- [x] **Insert images into emails** - Rich contentEditable composer with visual thumbnails (Dec 22)
+  - Media picker modal with search and multi-select
+  - Images render as visual previews in email body
+  - Available in lead detail and main email module
+- [x] Image preview functionality
+- [x] File operations (rename, move, delete, recursive folder deletion)
+- [x] Search functionality
+- [x] Breadcrumb navigation
+- [x] Agency admin dealership selector with search
+- [x] Permission system - all authenticated users can access media
+
+### Phase 2.75: Documents & Invoicing ✅ COMPLETED (Dec 5, 2024)
 
 **Goal:** Generate and sign paperwork digitally
 
-- [ ] Buyer's Order template
-- [ ] PDF generation
-- [ ] DocuSeal integration (or similar)
-- [ ] Document status tracking
-- [ ] Invoice generation
-- [ ] Loan agreement template (5 pages, pages 1 & 5 variable)
+- [x] Buyer's Order builder with wizard mode
+- [x] LLC/DBA name formatting
+- [x] Professional print layouts with brand colors
+- [x] Invoice builder with wizard mode
+- [x] Payment method selection (Wire Transfer, Cashier's Check)
+- [x] **Wire transfer details** - Account name, account number, routing number
+- [x] Buyer's Order linking to invoices
+- [x] PDF generation and printing
+- [x] Document status tracking (draft, sent, viewed, signed)
+- [ ] DocuSeal integration for digital signatures (planned)
+- [ ] Loan agreement template (planned)
+
+### Phase 3: Contractor Access & Request System ✅ COMPLETED (Dec 22, 2024)
+
+**Goal:** Enable external contractors (IT, Marketing, Content) to work with dealerships
+
+#### Contractor Role System
+- [x] New user role: `contractor` with department field (IT, Marketing, Content)
+- [x] Contractor-to-dealership access mapping (many-to-many relationship)
+- [x] Department-based permissions:
+  - **IT contractors**: Full access (settings, users, media, email, inventory, dealership config)
+  - **Content creators**: Media and inventory (upload photos/descriptions)
+  - **Marketing contractors**: Leads, email templates, and media
+- [x] Contractor management interface for agency admins
+- [x] Dealership selector for contractors (like agency admin)
+
+#### Request/Ticket System Module
+- [x] New "Requests" module for dealerships and contractors
+- [x] Create request with:
+  - Department selection (IT, Marketing, Content)
+  - Title and description
+  - File attachments
+  - Priority level (Low, Normal, High, Urgent)
+- [x] Contractor notification of new requests
+- [x] Full conversation thread per request:
+  - Text messages
+  - File attachments (images, documents)
+  - Read receipts with "Read by" display
+  - Timestamp for each message
+  - Real-time updates via polling
+- [x] Request status tracking (Open, In Progress, Resolved, Closed)
+- [x] Request assignment to specific contractor
+- [x] Filter requests by status, department, dealership
+- [x] Priority badges and status indicators
+- [x] Department routing to correct contractors
+
+#### Media Module - Completed & Future Enhancements
+- [x] **Folder upload** ✅ (Dec 22, 2024)
+- [x] **Image viewer with zoom/pan/navigation** ✅ (Dec 22, 2024)
+- [x] **Insert images into email composer** ✅ (Dec 22, 2024)
+- [ ] **Vehicle-based organization** (Future):
+  - Auto-create folder per vehicle (using VIN or stock number)
+  - Subfolders: Exterior, Interior, Engine, Damage, Documents
+  - Link vehicle media to inventory listings
+  - Auto-display vehicle photos in email templates
+  - Integration with vehicle inventory system
 
 ### Phase 4: Intelligence & Analytics
 
@@ -683,6 +1141,50 @@ json{
 - [ ] LLM integration: Summarize lead communications
 - [ ] LLM integration: Suggest responses
 - [ ] LLM integration: Analyze which creatives perform best
+
+---
+
+## Troubleshooting
+
+### Common Issues
+
+**Q: Contractor can't see any requests**
+- Verify contractor is assigned to the correct dealership in Admin > Contractors
+- Check that contractor's department matches the request department
+- Confirm contractor has selected the correct dealership from the selector
+
+**Q: Unable to assign contractor to request**
+- Ensure contractor's department matches the request department
+  - IT contractors can only be assigned to IT requests
+  - Marketing contractors only to Marketing requests
+  - Content contractors only to Content requests
+- Verify contractor has access to the request's dealership
+
+**Q: File upload fails in request attachments**
+- Check file size is under the maximum limit (typically 10MB)
+- Verify file type is allowed (images, PDFs, documents)
+- Ensure proper write permissions on upload directory
+- Check browser console for detailed error messages
+
+**Q: Read receipts not updating**
+- Real-time updates use polling (30 second intervals)
+- Refresh the page to force immediate update
+- Check browser network tab for failed API calls
+
+**Q: Can't change request status**
+- Only assigned contractors can change status
+- Dealership users can mark as resolved/closed
+- Agency admins have full access to modify status
+
+**Q: Contractor doesn't appear in assignment dropdown**
+- Verify contractor is assigned to the dealership
+- Check contractor's department matches request department
+- Confirm contractor account is active (not deactivated)
+
+**Q: Dealership selector not appearing for contractor**
+- Ensure user role is set to `contractor` (not salesperson/manager)
+- Verify contractor has at least one dealership assignment
+- Check that contractor has logged out and back in after assignment
 
 ---
 
@@ -706,7 +1208,9 @@ fcapp/
 │   │   ├── admin/
 │   │   │   ├── dashboard/
 │   │   │   ├── dealerships/
-│   │   │   └── users/
+│   │   │   ├── users/
+│   │   │   └── contractors/    # Contractor management
+│   │   ├── requests/            # Request/ticket system
 │   │   ├── api/
 │   │   │   ├── auth/
 │   │   │   ├── leads/
@@ -714,6 +1218,8 @@ fcapp/
 │   │   │   ├── activities/
 │   │   │   ├── voip/
 │   │   │   ├── emails/
+│   │   │   ├── contractors/     # Contractor endpoints
+│   │   │   ├── requests/        # Request endpoints
 │   │   │   └── meta/
 │   │   └── layout.tsx
 │   ├── components/

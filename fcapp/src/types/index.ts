@@ -14,6 +14,13 @@ import type {
   TaskType,
   DocumentType,
   DocumentStatus,
+  ContractorDepartment,
+  RequestStatus,
+  RequestPriority,
+  Request,
+  RequestMessage,
+  RequestAttachment,
+  ContractorDealershipAccess,
 } from "@prisma/client";
 
 // Re-export Prisma types
@@ -33,6 +40,13 @@ export type {
   TaskType,
   DocumentType,
   DocumentStatus,
+  ContractorDepartment,
+  RequestStatus,
+  RequestPriority,
+  Request,
+  RequestMessage,
+  RequestAttachment,
+  ContractorDealershipAccess,
 };
 
 // Extended types with relations
@@ -52,6 +66,46 @@ export type UserWithDealership = User & {
   dealership?: Dealership | null;
 };
 
+export type ContractorWithDealerships = User & {
+  contractorDealerships?: (ContractorDealershipAccess & {
+    dealership: Dealership;
+  })[];
+};
+
+export type ContractorWithRelations = User & {
+  contractorDealerships: (ContractorDealershipAccess & {
+    dealership: Dealership;
+  })[];
+  requestsAssigned: (Request & {
+    dealership: Dealership;
+    requestedBy: {
+      id: string;
+      name: string;
+      email: string;
+      role: UserRole;
+    } | null;
+  })[];
+};
+
+export type RequestWithRelations = Request & {
+  dealership: Dealership;
+  requestedBy: {
+    id: string;
+    name: string;
+    email: string;
+    role: UserRole;
+  } | null;
+  assignedTo?: User | null;
+  messages?: (RequestMessage & {
+    user: User;
+    attachments: RequestAttachment[];
+  })[];
+  attachments?: RequestAttachment[];
+  _count?: {
+    messages: number;
+  };
+};
+
 // Auth types
 export interface JWTPayload {
   userId: string;
@@ -64,11 +118,13 @@ export interface JWTPayload {
 
 export interface AuthUser {
   id: string;
+  userId: string; // Alias for id - used in some API routes
   email: string;
   name: string;
   role: UserRole;
   dealershipId: string | null;
   mustChangePassword?: boolean;
+  contractorDepartment?: ContractorDepartment | null;
 }
 
 // API Response types

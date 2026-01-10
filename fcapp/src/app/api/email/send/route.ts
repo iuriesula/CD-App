@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { sendEmail, addTrackingToHtml } from "@/lib/email";
+import { rateLimit, userIdentifier } from "@/lib/rate-limit";
 
 // POST /api/email/send - Send an email
 export async function POST(request: NextRequest) {
@@ -9,6 +10,17 @@ export async function POST(request: NextRequest) {
     const session = await getSession();
     if (!session) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // Rate limit: 30 emails per minute per user
+    const rateLimitResult = await rateLimit(request, {
+      maxRequests: 30,
+      windowMs: 60 * 1000, // 1 minute
+      identifier: async () => userIdentifier(session.id),
+    });
+
+    if (rateLimitResult) {
+      return rateLimitResult; // Returns 429 if rate limited
     }
 
     if (!session.dealershipId) {
@@ -41,6 +53,24 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Auto-thread: If no inReplyTo provided but we have a leadId,
+    // find the most recent email in this conversation to continue the thread
+    let threadMessageId = inReplyTo;
+    if (!threadMessageId && leadId) {
+      const mostRecentEmail = await prisma.email.findFirst({
+        where: {
+          leadId,
+          messageId: { not: null },
+        },
+        orderBy: { createdAt: "desc" },
+        select: { messageId: true },
+      });
+
+      if (mostRecentEmail?.messageId) {
+        threadMessageId = mostRecentEmail.messageId;
+      }
+    }
+
     // Create email record first to get ID for tracking
     const email = await prisma.email.create({
       data: {
@@ -53,7 +83,7 @@ export async function POST(request: NextRequest) {
         subject,
         bodyText: bodyText || null,
         bodyHtml: bodyHtml || null,
-        inReplyTo: inReplyTo || null,
+        inReplyTo: threadMessageId || null,
       },
     });
 
@@ -75,7 +105,7 @@ export async function POST(request: NextRequest) {
       subject,
       text: bodyText,
       html: finalHtml,
-      inReplyTo,
+      inReplyTo: threadMessageId,
     });
 
     if (!result.success) {

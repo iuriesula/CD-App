@@ -44,7 +44,7 @@ const PATTERNS = {
     /\b(\+?1?[-.\s]?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4})\b/,
   ],
 
-  // Name patterns
+  // Name patterns - use [^\S\n] for spaces (excludes newlines) to avoid capturing across lines
   firstName: [
     /(?:first\s*name|fname|given\s*name)[:\s]*([A-Za-z'-]+)/i,
   ],
@@ -52,8 +52,8 @@ const PATTERNS = {
     /(?:last\s*name|lname|surname|family\s*name)[:\s]*([A-Za-z'-]+)/i,
   ],
   fullName: [
-    /(?:full\s*name)[:\s]*([A-Za-z'-]+(?:\s+[A-Za-z'-]+)*)/i,
-    /(?:your\s*name|name)[:\s]*([A-Za-z'-]+(?:\s+[A-Za-z'-]+)*)/i,
+    /(?:full\s*name)[:\s]*([A-Za-z'-]+(?:[^\S\n]+[A-Za-z'-]+)*)/i,
+    /(?:your\s*name|name)[:\s]*([A-Za-z'-]+(?:[^\S\n]+[A-Za-z'-]+)*)/i,
   ],
 
   // Vehicle interest - Fluent Forms uses "Vehicle:" and "Vehicle URL:"
@@ -322,12 +322,18 @@ export function parseFormEmail(
     }
   }
 
-  // Extract Meta Ads tracking
+  // Extract Meta Ads tracking (skip placeholder values like "input_hidden")
+  const isValidTrackingValue = (value: string): boolean => {
+    if (!value || value.length === 0) return false;
+    const invalidValues = ['input_hidden', 'hidden', 'n/a', 'na', 'none', 'null', 'undefined', ''];
+    return !invalidValues.includes(value.toLowerCase());
+  };
+
   for (const pattern of PATTERNS.metaCampaignId) {
     const match = text.match(pattern);
     if (match) {
       const value = match[1].trim();
-      if (value && value.length > 0) {
+      if (isValidTrackingValue(value)) {
         data.metaCampaignId = value;
       }
       break;
@@ -338,7 +344,7 @@ export function parseFormEmail(
     const match = text.match(pattern);
     if (match) {
       const value = match[1].trim();
-      if (value && value.length > 0) {
+      if (isValidTrackingValue(value)) {
         data.metaAdsetId = value;
       }
       break;
@@ -349,7 +355,7 @@ export function parseFormEmail(
     const match = text.match(pattern);
     if (match) {
       const value = match[1].trim();
-      if (value && value.length > 0) {
+      if (isValidTrackingValue(value)) {
         data.metaAdId = value;
       }
       break;
@@ -360,7 +366,7 @@ export function parseFormEmail(
     const match = text.match(pattern);
     if (match) {
       const value = match[1].trim();
-      if (value && value.length > 0) {
+      if (isValidTrackingValue(value)) {
         data.metaAccountId = value;
       }
       break;
@@ -371,7 +377,7 @@ export function parseFormEmail(
     const match = text.match(pattern);
     if (match) {
       const value = match[1].trim();
-      if (value && value.length > 0) {
+      if (isValidTrackingValue(value)) {
         data.utmCampaign = value;
       }
       break;
@@ -382,7 +388,7 @@ export function parseFormEmail(
     const match = text.match(pattern);
     if (match) {
       const value = match[1].trim();
-      if (value && value.length > 0) {
+      if (isValidTrackingValue(value)) {
         data.utmSource = value;
       }
       break;
@@ -393,7 +399,7 @@ export function parseFormEmail(
     const match = text.match(pattern);
     if (match) {
       const value = match[1].trim();
-      if (value && value.length > 0) {
+      if (isValidTrackingValue(value)) {
         data.utmMedium = value;
       }
       break;

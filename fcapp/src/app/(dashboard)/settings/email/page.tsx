@@ -76,7 +76,7 @@ export default function EmailSettingsPage() {
         router.push("/leads");
         return;
       }
-      if (data.session.role !== "manager" && data.session.role !== "agency_admin") {
+      if (data.session.role === "contractor") {
         router.push("/leads");
         return;
       }
@@ -416,7 +416,7 @@ export default function EmailSettingsPage() {
 
               <Button
                 type="button"
-                variant="outline"
+                variant="secondary"
                 onClick={testSmtpConnection}
                 disabled={testingSmtp || !formData.smtpHost || !formData.smtpUser}
               >
@@ -503,7 +503,7 @@ export default function EmailSettingsPage() {
 
               <Button
                 type="button"
-                variant="outline"
+                variant="secondary"
                 onClick={testImapConnection}
                 disabled={testingImap || !formData.imapHost || !formData.imapUser}
               >
@@ -536,7 +536,7 @@ export default function EmailSettingsPage() {
             <div className="flex items-center gap-4">
               <Button
                 type="button"
-                variant="outline"
+                variant="secondary"
                 onClick={syncEmails}
                 disabled={syncing || !formData.emailSyncEnabled}
               >

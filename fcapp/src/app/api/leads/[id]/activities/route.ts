@@ -30,7 +30,7 @@ export async function POST(
     const lead = await prisma.lead.findFirst({
       where: {
         id,
-        ...(isAgencyAdmin(session.role) ? {} : { dealershipId: session.dealershipId }),
+        ...(isAgencyAdmin(session.role) || !session.dealershipId ? {} : { dealershipId: session.dealershipId }),
       },
     });
 
@@ -99,7 +99,7 @@ export async function GET(
     const activities = await prisma.activity.findMany({
       where: {
         leadId: id,
-        lead: isAgencyAdmin(session.role) ? {} : { dealershipId: session.dealershipId },
+        lead: isAgencyAdmin(session.role) || !session.dealershipId ? {} : { dealershipId: session.dealershipId },
       },
       include: {
         user: {

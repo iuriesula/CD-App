@@ -606,7 +606,7 @@ export default function DealershipSettingsPage() {
                     className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     placeholder="Add another phone number"
                   />
-                  <Button type="button" onClick={addPhone} variant="outline">
+                  <Button type="button" onClick={addPhone} variant="secondary">
                     Add
                   </Button>
                 </div>
@@ -658,7 +658,7 @@ export default function DealershipSettingsPage() {
                     className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     placeholder="Add another email"
                   />
-                  <Button type="button" onClick={addEmail} variant="outline">
+                  <Button type="button" onClick={addEmail} variant="secondary">
                     Add
                   </Button>
                 </div>
@@ -763,7 +763,7 @@ export default function DealershipSettingsPage() {
               />
               <Button
                 type="button"
-                variant="outline"
+                variant="secondary"
                 onClick={handleBrandColorSave}
               >
                 Save

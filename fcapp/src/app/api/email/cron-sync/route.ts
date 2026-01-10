@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import { syncDealershipEmails } from "@/lib/email-receive";
+import { env } from "@/lib/env";
+import { rateLimit } from "@/lib/rate-limit";
 
 /**
  * Cron endpoint to sync emails for all dealerships
@@ -8,14 +10,33 @@ import { syncDealershipEmails } from "@/lib/email-receive";
  * Call this from an external scheduler (cron, Windows Task Scheduler, etc.)
  * Example: curl -X POST http://localhost:3100/api/email/cron-sync -H "x-cron-secret: your-secret"
  *
- * Set CRON_SECRET in your environment variables for security
+ * CRON_SECRET is REQUIRED in production for security
  */
 export async function POST(request: NextRequest) {
-  // Verify cron secret if configured
-  const cronSecret = process.env.CRON_SECRET;
-  if (cronSecret) {
+  // Rate limit: 2 requests per minute (prevent abuse/misconfiguration)
+  const rateLimitResult = await rateLimit(request, {
+    maxRequests: 2,
+    windowMs: 60 * 1000, // 1 minute
+  });
+
+  if (rateLimitResult) {
+    return rateLimitResult; // Returns 429 if rate limited
+  }
+
+  const isProduction = process.env.NODE_ENV === "production";
+
+  // In production, CRON_SECRET is mandatory
+  if (isProduction && !env.CRON_SECRET) {
+    return NextResponse.json(
+      { error: "CRON_SECRET is not configured in production" },
+      { status: 401 }
+    );
+  }
+
+  // Verify cron secret
+  if (env.CRON_SECRET) {
     const providedSecret = request.headers.get("x-cron-secret");
-    if (providedSecret !== cronSecret) {
+    if (providedSecret !== env.CRON_SECRET) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
   }

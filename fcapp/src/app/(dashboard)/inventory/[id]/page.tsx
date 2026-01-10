@@ -321,7 +321,7 @@ export default function VehicleDetailPage() {
               {salesInfo.websiteDescription && (
                 <Button
                   size="sm"
-                  variant="outline"
+                  variant="secondary"
                   onClick={() => copyToClipboard(salesInfo.websiteDescription, "Description")}
                 >
                   <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -349,7 +349,7 @@ export default function VehicleDetailPage() {
               {salesInfo.callScript && (
                 <Button
                   size="sm"
-                  variant="outline"
+                  variant="secondary"
                   onClick={() => copyToClipboard(salesInfo.callScript, "Script")}
                 >
                   <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -381,7 +381,7 @@ export default function VehicleDetailPage() {
                 {salesInfo.technicalBulletpoints && (
                   <Button
                     size="sm"
-                    variant="outline"
+                    variant="secondary"
                     onClick={() => copyToClipboard(salesInfo.technicalBulletpoints, "Bulletpoints")}
                   >
                     <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">

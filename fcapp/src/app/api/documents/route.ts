@@ -60,10 +60,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  if (session.role === "salesperson" && session.role !== "manager") {
-    // Salespeople can create documents for their leads
-  }
-
   try {
     const body = await request.json();
     const { leadId, documentType, vehicleId, lineItems, notes, dueDate } = body;

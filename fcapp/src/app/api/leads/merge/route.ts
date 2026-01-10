@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const whereClause = isAgencyAdmin(session.role) ? {} : { dealershipId: session.dealershipId };
+    const whereClause = isAgencyAdmin(session.role) || !session.dealershipId ? {} : { dealershipId: session.dealershipId };
 
     // Fetch both leads
     const [primaryLead, secondaryLead] = await Promise.all([

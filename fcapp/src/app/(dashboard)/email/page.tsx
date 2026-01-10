@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { format, formatDistanceToNow } from "date-fns";
@@ -32,6 +32,32 @@ interface Email {
     id: string;
     name: string;
   } | null;
+}
+
+interface EmailTemplate {
+  id: string;
+  name: string;
+  subject: string;
+  bodyHtml: string;
+  category: string;
+  isActive: boolean;
+}
+
+interface EmailSignature {
+  id: string;
+  name: string;
+  content: string;
+  isDefault: boolean;
+}
+
+interface MediaItem {
+  id: string;
+  name: string;
+  type: string;
+  url: string;
+  mimeType: string | null;
+  size: number | null;
+  folder: string | null;
 }
 
 // Helper to detect if email is a reply
@@ -293,7 +319,7 @@ export default function EmailClientPage() {
           <p className="text-gray-500 text-sm">Manage your dealership communications</p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={syncEmails} disabled={syncing}>
+          <Button variant="secondary" onClick={syncEmails} disabled={syncing}>
             <svg className={`w-4 h-4 mr-2 ${syncing ? "animate-spin" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
@@ -538,7 +564,7 @@ export default function EmailClientPage() {
                 </div>
                 <div className="flex items-center gap-2">
                   {selectedEmail.direction === "inbound" && (
-                    <Button variant="outline" size="sm" onClick={() => handleReply(selectedEmail)}>
+                    <Button variant="secondary" size="sm" onClick={() => handleReply(selectedEmail)}>
                       <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
                       </svg>
@@ -732,13 +758,42 @@ function EmailComposerModal({
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [templates, setTemplates] = useState<any[]>([]);
-  const [signatures, setSignatures] = useState<any[]>([]);
+  const [templates, setTemplates] = useState<EmailTemplate[]>([]);
+  const [signatures, setSignatures] = useState<EmailSignature[]>([]);
   const [selectedSignature, setSelectedSignature] = useState("");
   const [showTemplateDropdown, setShowTemplateDropdown] = useState(false);
 
+  // Media picker state variables
+  const [showMediaPicker, setShowMediaPicker] = useState(false);
+  const [mediaItems, setMediaItems] = useState<MediaItem[]>([]);
+  const [loadingMedia, setLoadingMedia] = useState(false);
+  const [selectedImages, setSelectedImages] = useState<Set<string>>(new Set());
+  const [imageSearchQuery, setImageSearchQuery] = useState("");
+  const [dealershipId, setDealershipId] = useState<string | null>(null);
+
+  const bodyRef = useRef<HTMLDivElement>(null);
+
+  // Sync body state with contentEditable innerHTML
+  useEffect(() => {
+    if (bodyRef.current && bodyRef.current.innerHTML !== body) {
+      bodyRef.current.innerHTML = body;
+    }
+  }, [body]);
+
   useEffect(() => {
     loadResources();
+  }, []);
+
+  // Fetch dealership ID from session
+  useEffect(() => {
+    fetch("/api/auth/session")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.session?.dealershipId) {
+          setDealershipId(data.session.dealershipId);
+        }
+      })
+      .catch((error) => console.error("Failed to fetch session:", error));
   }, []);
 
   const loadResources = async () => {
@@ -751,16 +806,20 @@ function EmailComposerModal({
       const signaturesData = await signaturesRes.json();
       setTemplates(templatesData.templates || []);
       setSignatures(signaturesData.signatures || []);
-      const defaultSig = (signaturesData.signatures || []).find((s: any) => s.isDefault);
+      const defaultSig = (signaturesData.signatures || []).find((s: EmailSignature) => s.isDefault);
       if (defaultSig) setSelectedSignature(defaultSig.id);
     } catch (error) {
       console.error("Failed to load resources:", error);
     }
   };
 
-  const applyTemplate = (template: any) => {
+  const applyTemplate = (template: EmailTemplate) => {
     setSubject(template.subject);
-    setBody(template.bodyHtml.replace(/<[^>]*>/g, ""));
+    const cleanBody = template.bodyHtml.replace(/<[^>]*>/g, "");
+    setBody(cleanBody);
+    if (bodyRef.current) {
+      bodyRef.current.innerHTML = cleanBody;
+    }
     setShowTemplateDropdown(false);
   };
 
@@ -768,6 +827,62 @@ function EmailComposerModal({
     if (!selectedSignature) return "";
     const sig = signatures.find((s) => s.id === selectedSignature);
     return sig ? sig.content : "";
+  };
+
+  const loadMedia = async () => {
+    if (!dealershipId) return;
+
+    setLoadingMedia(true);
+    try {
+      const res = await fetch(`/api/dealerships/${dealershipId}/media`);
+      const data = await res.json();
+
+      // Filter only images
+      const images = (data.media || []).filter((item: MediaItem) =>
+        item.type !== "folder" && item.mimeType?.startsWith("image/")
+      );
+      setMediaItems(images);
+    } catch (error) {
+      console.error("Failed to load media:", error);
+    } finally {
+      setLoadingMedia(false);
+    }
+  };
+
+  const handleOpenMediaPicker = () => {
+    setShowMediaPicker(true);
+    setSelectedImages(new Set());
+    loadMedia();
+  };
+
+  const handleToggleImageSelection = (imageId: string) => {
+    const newSelection = new Set(selectedImages);
+    if (newSelection.has(imageId)) {
+      newSelection.delete(imageId);
+    } else {
+      newSelection.add(imageId);
+    }
+    setSelectedImages(newSelection);
+  };
+
+  const handleInsertImages = () => {
+    const selectedImageData = mediaItems.filter(item => selectedImages.has(item.id));
+
+    if (bodyRef.current) {
+      // Create image elements with inline thumbnails (max 200px height for preview)
+      const imageElements = selectedImageData
+        .map(item => `<img src="${item.url}" alt="${item.name}" style="max-width: 100%; max-height: 200px; height: auto; margin: 10px 5px; border-radius: 4px; object-fit: contain;" />`)
+        .join('');
+
+      // Insert at the end of current content
+      const currentContent = bodyRef.current.innerHTML;
+      bodyRef.current.innerHTML = currentContent + '<br>' + imageElements + '<br>';
+      setBody(bodyRef.current.innerHTML);
+    }
+
+    // Close modal and reset selection
+    setShowMediaPicker(false);
+    setSelectedImages(new Set());
   };
 
   const handleSend = async () => {
@@ -780,12 +895,21 @@ function EmailComposerModal({
       return;
     }
 
+    const bodyContent = bodyRef.current?.innerHTML || body;
+    const bodyTextContent = bodyRef.current?.innerText || body;
+
+    if (!bodyTextContent.trim()) {
+      setError("Message body is required");
+      return;
+    }
+
     setSending(true);
     setError(null);
 
     try {
       const signature = getSignatureContent();
-      const fullBody = signature ? `${body}\n\n${signature}` : body;
+      const fullBodyHtml = signature ? `${bodyContent}<br><br>${signature}` : bodyContent;
+      const fullBodyText = signature ? `${bodyTextContent}\n\n${signature}` : bodyTextContent;
 
       const response = await fetch("/api/email/send", {
         method: "POST",
@@ -794,11 +918,8 @@ function EmailComposerModal({
           leadId: replyTo?.leadId || null,
           to,
           subject,
-          bodyText: fullBody,
-          bodyHtml: `<div style="font-family: sans-serif; line-height: 1.6;">${fullBody
-            .split("\n")
-            .map((line) => `<p>${line || "&nbsp;"}</p>`)
-            .join("")}</div>`,
+          bodyText: fullBodyText,
+          bodyHtml: `<div style="font-family: sans-serif; line-height: 1.6;">${fullBodyHtml}</div>`,
           inReplyTo: replyTo?.id || null,
         }),
       });
@@ -826,7 +947,7 @@ function EmailComposerModal({
     if (!acc[t.category]) acc[t.category] = [];
     acc[t.category].push(t);
     return acc;
-  }, {} as Record<string, any[]>);
+  }, {} as Record<string, EmailTemplate[]>);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -864,7 +985,7 @@ function EmailComposerModal({
                       <div className="px-3 py-1.5 text-xs font-semibold text-gray-500 bg-gray-50 uppercase">
                         {categoryLabels[cat] || cat}
                       </div>
-                      {(temps as any[]).map((t) => (
+                      {temps.map((t) => (
                         <button
                           key={t.id}
                           onClick={() => applyTemplate(t)}
@@ -902,20 +1023,27 @@ function EmailComposerModal({
             />
           </div>
 
-          <div>
+          <div className="relative">
             <label className="block text-sm font-medium text-gray-700 mb-1">Message</label>
-            <textarea
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
+            <div
+              ref={bodyRef}
+              contentEditable
+              dir="ltr"
+              onInput={(e) => setBody(e.currentTarget.innerHTML)}
               onKeyDown={(e) => {
                 if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
                   e.preventDefault();
                   handleSend();
                 }
               }}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent min-h-[200px] resize-none"
-              placeholder="Write your message..."
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent min-h-[200px] resize-y overflow-y-auto focus:outline-none [direction:ltr] [text-align:left] [unicode-bidi:embed]"
+              style={{ whiteSpace: 'pre-wrap', direction: 'ltr', textAlign: 'left', unicodeBidi: 'embed' }}
             />
+            {!body && (
+              <div className="absolute top-[2.5rem] left-3 text-gray-400 pointer-events-none">
+                Write your message...
+              </div>
+            )}
           </div>
 
           {signatures.length > 0 && (
@@ -942,11 +1070,26 @@ function EmailComposerModal({
         </div>
 
         <div className="flex items-center justify-between p-4 border-t bg-gray-50">
-          <span className="text-xs text-gray-500">
-            Press Ctrl+Enter to send
-          </span>
           <div className="flex items-center gap-3">
-            <Button variant="outline" onClick={onClose} disabled={sending}>
+            <span className="text-xs text-gray-500">
+              Press Ctrl+Enter to send
+            </span>
+            {dealershipId && (
+              <button
+                type="button"
+                onClick={handleOpenMediaPicker}
+                className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-200 rounded-lg transition-colors"
+                disabled={sending}
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+                Insert Images
+              </button>
+            )}
+          </div>
+          <div className="flex items-center gap-3">
+            <Button variant="secondary" onClick={onClose} disabled={sending}>
               Cancel
             </Button>
             <Button onClick={handleSend} disabled={sending}>
@@ -955,6 +1098,181 @@ function EmailComposerModal({
           </div>
         </div>
       </div>
+
+      {/* Media Picker Modal */}
+      {showMediaPicker && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center">
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-black/50"
+            onClick={() => {
+              setShowMediaPicker(false);
+              setSelectedImages(new Set());
+              setImageSearchQuery("");
+            }}
+          />
+
+          {/* Modal */}
+          <div className="relative bg-white rounded-lg shadow-xl w-full max-w-4xl mx-4 max-h-[90vh] flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between p-4 border-b">
+              <h3 className="text-lg font-semibold text-gray-900">Select Images</h3>
+              <button
+                onClick={() => {
+                  setShowMediaPicker(false);
+                  setSelectedImages(new Set());
+                  setImageSearchQuery("");
+                }}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Search Bar */}
+            <div className="p-4 border-b">
+              <div className="relative">
+                <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                <input
+                  type="text"
+                  value={imageSearchQuery}
+                  onChange={(e) => setImageSearchQuery(e.target.value)}
+                  placeholder="Search images by name..."
+                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-auto p-4">
+              {loadingMedia ? (
+                <div className="flex items-center justify-center h-64">
+                  <div className="text-center">
+                    <svg className="animate-spin h-8 w-8 text-blue-600 mx-auto mb-2" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <p className="text-gray-600">Loading images...</p>
+                  </div>
+                </div>
+              ) : mediaItems.length === 0 ? (
+                <div className="flex items-center justify-center h-64">
+                  <div className="text-center">
+                    <svg className="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                    <p className="text-gray-600 font-medium mb-1">No images available</p>
+                    <p className="text-gray-500 text-sm">Upload images to the media library to use them in emails</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="grid grid-cols-3 sm:grid-cols-4 gap-4">
+                  {mediaItems
+                    .filter(item =>
+                      imageSearchQuery === "" ||
+                      item.name.toLowerCase().includes(imageSearchQuery.toLowerCase())
+                    )
+                    .map((item) => {
+                      const isSelected = selectedImages.has(item.id);
+                      return (
+                        <div
+                          key={item.id}
+                          onClick={() => handleToggleImageSelection(item.id)}
+                          className={`relative group cursor-pointer rounded-lg overflow-hidden border-2 transition-all ${
+                            isSelected
+                              ? "border-blue-600 ring-2 ring-blue-200"
+                              : "border-gray-200 hover:border-blue-400"
+                          }`}
+                        >
+                          {/* Image */}
+                          <div className="aspect-square bg-gray-100 relative">
+                            <img
+                              src={item.url}
+                              alt={item.name}
+                              className="w-full h-full object-cover"
+                            />
+
+                            {/* Overlay on hover */}
+                            <div className={`absolute inset-0 transition-opacity ${
+                              isSelected
+                                ? "bg-blue-600/20"
+                                : "bg-black/0 group-hover:bg-black/10"
+                            }`} />
+
+                            {/* Checkbox */}
+                            <div className="absolute top-2 right-2">
+                              <div className={`w-6 h-6 rounded border-2 flex items-center justify-center transition-colors ${
+                                isSelected
+                                  ? "bg-blue-600 border-blue-600"
+                                  : "bg-white border-gray-300 group-hover:border-blue-400"
+                              }`}>
+                                {isSelected && (
+                                  <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                                  </svg>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Image name */}
+                          <div className="p-2 bg-white">
+                            <p className="text-xs text-gray-700 truncate" title={item.name}>
+                              {item.name}
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+              )}
+
+              {/* No search results */}
+              {!loadingMedia && mediaItems.length > 0 && imageSearchQuery &&
+               mediaItems.filter(item => item.name.toLowerCase().includes(imageSearchQuery.toLowerCase())).length === 0 && (
+                <div className="flex items-center justify-center h-64">
+                  <div className="text-center">
+                    <svg className="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                    <p className="text-gray-600 font-medium mb-1">No images found</p>
+                    <p className="text-gray-500 text-sm">Try a different search term</p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-center justify-between p-4 border-t bg-gray-50">
+              <span className="text-sm text-gray-600">
+                {selectedImages.size} {selectedImages.size === 1 ? "image" : "images"} selected
+              </span>
+              <div className="flex items-center gap-3">
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    setShowMediaPicker(false);
+                    setSelectedImages(new Set());
+                    setImageSearchQuery("");
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleInsertImages}
+                  disabled={selectedImages.size === 0}
+                >
+                  Insert Selected
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1130,7 +1448,7 @@ function CreateLeadModal({
         </form>
 
         <div className="flex items-center justify-end gap-3 p-4 border-t bg-gray-50">
-          <Button variant="outline" onClick={onClose} disabled={saving}>
+          <Button variant="secondary" onClick={onClose} disabled={saving}>
             Cancel
           </Button>
           <Button onClick={handleSubmit} disabled={saving}>

@@ -162,6 +162,8 @@ export default function LeadDetailPage() {
   const [savingContact, setSavingContact] = useState(false);
   const [showBuyersOrder, setShowBuyersOrder] = useState(false);
   const [showInvoice, setShowInvoice] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [contactForm, setContactForm] = useState({
     firstName: "",
     lastName: "",
@@ -310,6 +312,28 @@ export default function LeadDetailPage() {
     } finally {
       setSaving(false);
       setShowStageSelect(false);
+    }
+  };
+
+  const handleDeleteLead = async () => {
+    if (!lead) return;
+    setDeleting(true);
+    try {
+      const response = await fetch(`/api/leads/${lead.id}`, {
+        method: "DELETE",
+      });
+      if (response.ok) {
+        router.push("/leads");
+      } else {
+        const data = await response.json();
+        alert(data.error || "Failed to delete lead");
+      }
+    } catch (error) {
+      console.error("Failed to delete lead:", error);
+      alert("Failed to delete lead");
+    } finally {
+      setDeleting(false);
+      setShowDeleteConfirm(false);
     }
   };
 
@@ -497,6 +521,15 @@ export default function LeadDetailPage() {
                 Email
               </button>
             )}
+            <button
+              onClick={() => setShowDeleteConfirm(true)}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors"
+              title="Delete lead"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+            </button>
           </div>
         </div>
       </div>
@@ -997,10 +1030,10 @@ export default function LeadDetailPage() {
                       </div>
                       <Badge
                         variant={
-                          doc.status === "signed" ? "success" :
-                          doc.status === "sent" ? "warning" :
-                          doc.status === "viewed" ? "info" :
-                          "secondary"
+                          doc.status === "signed" ? "green" :
+                          doc.status === "sent" ? "yellow" :
+                          doc.status === "viewed" ? "blue" :
+                          "gray"
                         }
                         size="sm"
                       >
@@ -1179,6 +1212,7 @@ export default function LeadDetailPage() {
             interestedVehicle: lead.interestedVehicle || undefined,
           }}
           dealershipName={lead.dealership?.name}
+          dealershipId={lead.dealership?.id}
           onClose={() => setShowEmailComposer(false)}
           onSent={() => {
             fetchLead();
@@ -1232,6 +1266,35 @@ export default function LeadDetailPage() {
             setShowInvoice(false);
           }}
         />
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="fixed inset-0 bg-black/50" onClick={() => setShowDeleteConfirm(false)} />
+          <div className="relative bg-white rounded-lg shadow-xl p-6 max-w-md w-full mx-4">
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Delete Lead</h3>
+            <p className="text-gray-600 mb-4">
+              Are you sure you want to delete <strong>{getName()}</strong>? This will also delete all associated activities, tasks, and documents. Emails will be kept but unlinked from this lead.
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                disabled={deleting}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteLead}
+                className="px-4 py-2 text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50"
+                disabled={deleting}
+              >
+                {deleting ? "Deleting..." : "Delete Lead"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
