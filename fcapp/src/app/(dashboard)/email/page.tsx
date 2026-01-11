@@ -134,10 +134,9 @@ export default function EmailClientPage() {
       const data = await response.json();
       setEmails(data.emails || []);
 
-      // Count unread (only for inbox)
-      if (folder === "inbox" || folder === "all") {
-        const unread = (data.emails || []).filter((e: Email) => !e.isRead && e.direction === "inbound").length;
-        setUnreadCount(unread);
+      // Use unread count from API (accurate count, not limited by pagination)
+      if (data.unreadCount !== undefined) {
+        setUnreadCount(data.unreadCount);
       }
     } catch (error) {
       console.error("Failed to fetch emails:", error);

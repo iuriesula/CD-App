@@ -57,7 +57,18 @@ export async function GET(request: NextRequest) {
       where.leadId = null;
     }
 
-    const [emails, total] = await Promise.all([
+    // Build unread count query (inbox unread only - excludes spam/trash)
+    const unreadWhere = {
+      dealershipId: session.dealershipId,
+      direction: "inbound" as const,
+      isRead: false,
+      OR: [
+        { folder: null },
+        { folder: { notIn: ["spam", "trash"] } },
+      ],
+    };
+
+    const [emails, total, unreadCount] = await Promise.all([
       prisma.email.findMany({
         where,
         include: {
@@ -81,10 +92,12 @@ export async function GET(request: NextRequest) {
         take: limit,
       }),
       prisma.email.count({ where }),
+      prisma.email.count({ where: unreadWhere }),
     ]);
 
     return NextResponse.json({
       emails,
+      unreadCount,
       pagination: {
         page,
         limit,
