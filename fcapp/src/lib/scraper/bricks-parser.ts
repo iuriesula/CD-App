@@ -80,20 +80,26 @@ export function parseVehicleDetailPage(html: string, url: string): ScrapedVehicl
 
 /**
  * Extract year, make, model from URL pattern
- * Pattern: /listing/2020-toyota-camry-abc123/
+ * Pattern: /listing/2020-toyota-camry-abc123/ or /listing/1970-plymouth-road-runner-5298/
+ * Note: Model can have multiple words with dashes (e.g., "road-runner", "bel-air")
  */
 function extractDataFromUrl(url: string): { year?: number; make?: string; model?: string } {
-  const urlPattern = /\/listing\/(\d{4})-([^-]+)-([^-]+)/i;
+  // Pattern captures: year, make, and everything up to the final numeric ID
+  const urlPattern = /\/listing\/(\d{4})-([^-]+)-(.+?)-(\d+)\/?$/i;
   const match = url.match(urlPattern);
 
   if (!match) {
     return {};
   }
 
+  // Model may contain dashes (e.g., "road-runner" -> "Road Runner")
+  const modelParts = match[3].split('-');
+  const model = modelParts.map(p => capitalize(p)).join(' ');
+
   return {
     year: parseInt(match[1], 10),
     make: capitalize(match[2].replace(/-/g, ' ')),
-    model: capitalize(match[3].replace(/-/g, ' ')),
+    model: model,
   };
 }
 
