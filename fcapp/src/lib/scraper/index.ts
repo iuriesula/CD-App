@@ -166,7 +166,7 @@ export async function previewWebsiteVehicles(
       // Fetch detail page to get VIN for accurate matching
       try {
         // Small delay between fetches to be polite
-        await new Promise(resolve => setTimeout(resolve, 200));
+        await new Promise(resolve => setTimeout(resolve, 100));
         const detailHtml = await fetchPage(summary.url, config);
         const detail = parseVehicleDetailPage(detailHtml, summary.url);
         vin = detail.vin;
