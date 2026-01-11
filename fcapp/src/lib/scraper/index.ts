@@ -183,8 +183,14 @@ export async function previewWebsiteVehicles(
         // Continue with URL-parsed values - may be less accurate
       }
 
-      // Check by VIN first (same as import logic)
-      if (vin) {
+      // Check by source_url first (most accurate - each listing has unique URL)
+      existing = await prisma.vehicle.findFirst({
+        where: { sourceUrl: summary.url },
+        select: { id: true, dealershipId: true },
+      });
+
+      // If no source_url match, try VIN
+      if (!existing && vin) {
         existing = await prisma.vehicle.findUnique({
           where: { vin },
           select: { id: true, dealershipId: true },
@@ -192,24 +198,9 @@ export async function previewWebsiteVehicles(
         if (existing) matchedByVin = true;
       }
 
-      // If no VIN match, try Year+Make+Model using HTML-parsed values
-      if (!existing) {
-        console.log(`[Preview] Checking DB for: ${matchYear} ${matchMake} ${matchModel} (dealership: ${dealershipId})`);
-        existing = await prisma.vehicle.findFirst({
-          where: {
-            dealershipId,
-            year: matchYear,
-            make: { equals: matchMake, mode: "insensitive" },
-            model: { equals: matchModel, mode: "insensitive" },
-          },
-          select: { id: true, dealershipId: true },
-        });
-        console.log(`[Preview] Match result: ${existing ? 'FOUND ' + existing.id : 'NOT FOUND'}`);
-      }
-
-      // Skip if vehicle belongs to different dealership (VIN match but wrong dealership)
+      // Skip if vehicle belongs to different dealership
       const existsInDb = existing && existing.dealershipId === dealershipId;
-      console.log(`[Preview] ${matchYear} ${matchMake} ${matchModel}: existsInDb=${existsInDb}`);
+      console.log(`[Preview] ${matchYear} ${matchMake} ${matchModel} (${summary.url}): existsInDb=${existsInDb}`);
       if (existsInDb) existingCount++;
 
       previewVehicles.push({
@@ -344,26 +335,19 @@ export async function importWebsiteVehicles(
         const detailHtml = await fetchPage(summary.url, config);
         const detail = parseVehicleDetailPage(detailHtml, summary.url);
 
-        // Find existing vehicle (by VIN first, then by year+make+model)
+        // Find existing vehicle (by source_url first, then VIN)
         let existingVehicle = null;
-        let matchedByVin = false;
 
-        if (detail.vin) {
+        // Check by source_url first (most accurate - each listing has unique URL)
+        existingVehicle = await prisma.vehicle.findFirst({
+          where: { sourceUrl: summary.url },
+          select: { id: true, dealershipId: true },
+        });
+
+        // If no source_url match, try VIN
+        if (!existingVehicle && detail.vin) {
           existingVehicle = await prisma.vehicle.findUnique({
             where: { vin: detail.vin },
-            select: { id: true, dealershipId: true },
-          });
-          if (existingVehicle) matchedByVin = true;
-        }
-
-        if (!existingVehicle) {
-          existingVehicle = await prisma.vehicle.findFirst({
-            where: {
-              dealershipId,
-              year: detail.year,
-              make: { equals: detail.make, mode: "insensitive" },
-              model: { equals: detail.model, mode: "insensitive" },
-            },
             select: { id: true, dealershipId: true },
           });
         }
