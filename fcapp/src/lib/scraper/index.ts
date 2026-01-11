@@ -194,6 +194,7 @@ export async function previewWebsiteVehicles(
 
       // If no VIN match, try Year+Make+Model using HTML-parsed values
       if (!existing) {
+        console.log(`[Preview] Checking DB for: ${matchYear} ${matchMake} ${matchModel} (dealership: ${dealershipId})`);
         existing = await prisma.vehicle.findFirst({
           where: {
             dealershipId,
@@ -203,10 +204,12 @@ export async function previewWebsiteVehicles(
           },
           select: { id: true, dealershipId: true },
         });
+        console.log(`[Preview] Match result: ${existing ? 'FOUND ' + existing.id : 'NOT FOUND'}`);
       }
 
       // Skip if vehicle belongs to different dealership (VIN match but wrong dealership)
       const existsInDb = existing && existing.dealershipId === dealershipId;
+      console.log(`[Preview] ${matchYear} ${matchMake} ${matchModel}: existsInDb=${existsInDb}`);
       if (existsInDb) existingCount++;
 
       previewVehicles.push({
