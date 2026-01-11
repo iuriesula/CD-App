@@ -289,9 +289,11 @@ export async function syncDealershipEmails(dealershipId: string): Promise<{
               }
             }
 
-            // Try to match vehicle from URL in email
+            // Try to match vehicle from URL or vehicle name in email
             let vehicleId: string | null = null;
-            if (parsedData.vehicleUrl) {
+
+            // First try direct URL match
+            if (parsedData.vehicleUrl?.startsWith('http')) {
               const vehicle = await prisma.vehicle.findFirst({
                 where: {
                   dealershipId,
@@ -302,6 +304,29 @@ export async function syncDealershipEmails(dealershipId: string): Promise<{
               if (vehicle) {
                 vehicleId = vehicle.id;
                 console.log(`[Email] Auto-matched vehicle ${vehicleId} from URL: ${parsedData.vehicleUrl}`);
+              }
+            }
+
+            // If no URL match, try to extract listing ID from vehicle name
+            // Pattern: "1972 Chevrolet C10 - 3133" or subject line
+            if (!vehicleId) {
+              const vehicleText = parsedData.interestedVehicle || parsedData.vehicleUrl || '';
+              // Extract listing ID from end of string (e.g., "- 3133" or just "3133")
+              const listingIdMatch = vehicleText.match(/[-\s](\d{3,5})$/);
+              if (listingIdMatch) {
+                const listingId = listingIdMatch[1];
+                // Match source_url ending with this ID
+                const vehicle = await prisma.vehicle.findFirst({
+                  where: {
+                    dealershipId,
+                    sourceUrl: { endsWith: `-${listingId}/` },
+                  },
+                  select: { id: true },
+                });
+                if (vehicle) {
+                  vehicleId = vehicle.id;
+                  console.log(`[Email] Auto-matched vehicle ${vehicleId} from listing ID: ${listingId}`);
+                }
               }
             }
 
