@@ -712,12 +712,15 @@ export default function LeadDetailPage() {
             {/* Linked vehicle from inventory */}
             {lead.vehicle ? (
               <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
-                <div className="flex items-center gap-2">
+                <Link
+                  href={`/inventory/${lead.vehicle.id}`}
+                  className="flex items-center gap-2 hover:opacity-80 transition-opacity"
+                >
                   <span className="text-green-600">&#10003;</span>
-                  <span className="font-medium text-gray-900">
+                  <span className="font-medium text-gray-900 hover:text-blue-600 hover:underline">
                     {getVehicleDisplayName(lead.vehicle)}
                   </span>
-                </div>
+                </Link>
                 {lead.vehicle.askingPrice && (
                   <p className="text-sm text-gray-600 mt-1">
                     ${parseFloat(lead.vehicle.askingPrice).toLocaleString()}
