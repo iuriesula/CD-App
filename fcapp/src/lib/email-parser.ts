@@ -63,6 +63,8 @@ const PATTERNS = {
   ],
   vehicleUrl: [
     /(?:vehicle\s*url)[:\s]*(https?:\/\/[^\s]+)/i,
+    // Also look for listing URLs in the body (e.g., https://site.com/listing/1970-plymouth-road-runner-5298/)
+    /(https?:\/\/[^\s]+\/listing\/[^\s"'<>]+)/i,
   ],
 
   // Message/Comments - stop at section markers

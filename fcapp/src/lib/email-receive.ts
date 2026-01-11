@@ -289,6 +289,22 @@ export async function syncDealershipEmails(dealershipId: string): Promise<{
               }
             }
 
+            // Try to match vehicle from URL in email
+            let vehicleId: string | null = null;
+            if (parsedData.vehicleUrl) {
+              const vehicle = await prisma.vehicle.findFirst({
+                where: {
+                  dealershipId,
+                  sourceUrl: parsedData.vehicleUrl,
+                },
+                select: { id: true },
+              });
+              if (vehicle) {
+                vehicleId = vehicle.id;
+                console.log(`[Email] Auto-matched vehicle ${vehicleId} from URL: ${parsedData.vehicleUrl}`);
+              }
+            }
+
             // Get the next salesperson via round-robin
             const nextSalesperson = await getNextSalesperson(
               dealershipId,
@@ -299,6 +315,7 @@ export async function syncDealershipEmails(dealershipId: string): Promise<{
               data: {
                 dealershipId,
                 assignedToId: nextSalesperson?.id || null,
+                vehicleId, // Auto-matched from email URL
                 firstName: parsedData.firstName || null,
                 lastName: parsedData.lastName || null,
                 primaryEmail: parsedData.email?.toLowerCase() || null,
