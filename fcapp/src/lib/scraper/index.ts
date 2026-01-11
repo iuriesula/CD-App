@@ -162,17 +162,25 @@ export async function previewWebsiteVehicles(
       let vin: string | null = null;
       let existing = null;
       let matchedByVin = false;
+      // Use HTML-parsed values for matching (same as import does)
+      let matchYear = summary.year;
+      let matchMake = summary.make;
+      let matchModel = summary.model;
 
-      // Fetch detail page to get VIN for accurate matching
+      // Fetch detail page to get VIN and accurate year/make/model for matching
       try {
         // Small delay between fetches to be polite
         await new Promise(resolve => setTimeout(resolve, 100));
         const detailHtml = await fetchPage(summary.url, config);
         const detail = parseVehicleDetailPage(detailHtml, summary.url);
         vin = detail.vin;
+        // Use HTML-parsed values for matching (same as import will use)
+        matchYear = detail.year;
+        matchMake = detail.make;
+        matchModel = detail.model;
       } catch (error) {
         console.log(`[Preview] Could not fetch detail page for ${summary.url}:`, error);
-        // Continue without VIN - will fall back to Year+Make+Model matching
+        // Continue with URL-parsed values - may be less accurate
       }
 
       // Check by VIN first (same as import logic)
@@ -184,14 +192,14 @@ export async function previewWebsiteVehicles(
         if (existing) matchedByVin = true;
       }
 
-      // If no VIN match, try Year+Make+Model
+      // If no VIN match, try Year+Make+Model using HTML-parsed values
       if (!existing) {
         existing = await prisma.vehicle.findFirst({
           where: {
             dealershipId,
-            year: summary.year,
-            make: { equals: summary.make, mode: "insensitive" },
-            model: { equals: summary.model, mode: "insensitive" },
+            year: matchYear,
+            make: { equals: matchMake, mode: "insensitive" },
+            model: { equals: matchModel, mode: "insensitive" },
           },
           select: { id: true, dealershipId: true },
         });
@@ -203,9 +211,9 @@ export async function previewWebsiteVehicles(
 
       previewVehicles.push({
         url: summary.url,
-        year: summary.year,
-        make: summary.make,
-        model: summary.model,
+        year: matchYear,
+        make: matchMake,
+        model: matchModel,
         price: summary.price,
         mileage: summary.mileage,
         imageCount: 0, // Will be determined during full import
