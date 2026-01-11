@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { websiteUrl, listingPath = "/listing/" } = body;
+    const { websiteUrl, listingPath = "/listing/", selectedUrls } = body;
 
     if (!websiteUrl) {
       return NextResponse.json(
@@ -85,7 +85,9 @@ export async function POST(request: NextRequest) {
       listingPath,
       dealershipId,
       session.id,
-      job.id
+      job.id,
+      undefined, // onProgress callback
+      selectedUrls // optional array of selected vehicle URLs
     ).catch((error) => {
       console.error("Background import failed:", error);
     });

@@ -66,6 +66,7 @@ export default function ImportVehiclesPage() {
 
   // Preview state
   const [preview, setPreview] = useState<PreviewResponse | null>(null);
+  const [selectedUrls, setSelectedUrls] = useState<Set<string>>(new Set());
 
   // Progress state
   const [jobId, setJobId] = useState<string | null>(null);
@@ -121,6 +122,10 @@ export default function ImportVehiclesPage() {
       }
 
       setPreview(data);
+      // Auto-select all vehicles by default
+      if (data.vehicles) {
+        setSelectedUrls(new Set(data.vehicles.map((v: PreviewVehicle) => v.url)));
+      }
       setCurrentStep("preview");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to preview inventory");
@@ -129,7 +134,34 @@ export default function ImportVehiclesPage() {
     }
   };
 
+  const toggleVehicleSelection = (url: string) => {
+    setSelectedUrls((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(url)) {
+        newSet.delete(url);
+      } else {
+        newSet.add(url);
+      }
+      return newSet;
+    });
+  };
+
+  const selectAllVehicles = () => {
+    if (preview?.vehicles) {
+      setSelectedUrls(new Set(preview.vehicles.map((v) => v.url)));
+    }
+  };
+
+  const deselectAllVehicles = () => {
+    setSelectedUrls(new Set());
+  };
+
   const handleStartImport = async () => {
+    if (selectedUrls.size === 0) {
+      setError("Please select at least one vehicle to import");
+      return;
+    }
+
     setError(null);
     setLoading(true);
 
@@ -140,6 +172,7 @@ export default function ImportVehiclesPage() {
         body: JSON.stringify({
           websiteUrl: websiteUrl.trim(),
           listingPath: listingPath.trim() || "/listing/",
+          selectedUrls: Array.from(selectedUrls),
         }),
       });
 
@@ -239,6 +272,7 @@ export default function ImportVehiclesPage() {
     setWebsiteUrl("");
     setListingPath("/listing/");
     setPreview(null);
+    setSelectedUrls(new Set());
     setJobId(null);
     setStats({
       processed: 0,
@@ -378,17 +412,60 @@ export default function ImportVehiclesPage() {
             </CardHeader>
 
             <p className="text-sm text-gray-600 mb-4">
-              Review the vehicles found on the website before starting the import.
-              Existing vehicles will be updated with new data.
+              Select the vehicles you want to import. Existing vehicles will be updated with new data.
             </p>
+
+            {/* Selection Controls */}
+            <div className="flex items-center justify-between mb-4 pb-3 border-b border-gray-200">
+              <div className="flex items-center gap-3">
+                <span className="text-sm font-medium text-gray-700">
+                  {selectedUrls.size} of {preview.totalFound} selected
+                </span>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={selectAllVehicles}
+                  className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+                >
+                  Select All
+                </button>
+                <span className="text-gray-300">|</span>
+                <button
+                  onClick={deselectAllVehicles}
+                  className="text-sm text-gray-600 hover:text-gray-800 font-medium"
+                >
+                  Deselect All
+                </button>
+              </div>
+            </div>
 
             {/* Vehicle List */}
             <div className="space-y-2 max-h-96 overflow-y-auto">
               {preview.vehicles.map((vehicle, index) => (
                 <div
                   key={vehicle.url || index}
-                  className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+                  onClick={() => toggleVehicleSelection(vehicle.url)}
+                  className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-colors ${
+                    selectedUrls.has(vehicle.url)
+                      ? "bg-blue-50 border border-blue-200 hover:bg-blue-100"
+                      : "bg-gray-50 border border-transparent hover:bg-gray-100"
+                  }`}
                 >
+                  {/* Checkbox */}
+                  <div
+                    className={`flex-shrink-0 w-5 h-5 rounded border-2 flex items-center justify-center ${
+                      selectedUrls.has(vehicle.url)
+                        ? "bg-blue-600 border-blue-600"
+                        : "border-gray-300 bg-white"
+                    }`}
+                  >
+                    {selectedUrls.has(vehicle.url) && (
+                      <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                      </svg>
+                    )}
+                  </div>
+
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="font-medium text-gray-900">
@@ -409,8 +486,12 @@ export default function ImportVehiclesPage() {
 
             {/* Actions */}
             <div className="flex gap-3 pt-4 border-t border-gray-200 mt-4">
-              <Button onClick={handleStartImport} disabled={loading} loading={loading}>
-                {loading ? "Starting..." : `Import ${preview.totalFound} Vehicles`}
+              <Button
+                onClick={handleStartImport}
+                disabled={loading || selectedUrls.size === 0}
+                loading={loading}
+              >
+                {loading ? "Starting..." : `Import ${selectedUrls.size} Vehicle${selectedUrls.size !== 1 ? "s" : ""}`}
               </Button>
               <Button variant="secondary" onClick={handleBack} disabled={loading}>
                 Back

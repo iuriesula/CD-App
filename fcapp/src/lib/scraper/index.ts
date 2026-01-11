@@ -217,6 +217,7 @@ export async function previewWebsiteVehicles(
 /**
  * Import vehicles from website
  * Uses a callback for progress updates (for SSE streaming)
+ * @param selectedUrls - Optional array of specific vehicle URLs to import. If provided, only these URLs will be imported.
  */
 export async function importWebsiteVehicles(
   websiteUrl: string,
@@ -224,7 +225,8 @@ export async function importWebsiteVehicles(
   dealershipId: string,
   userId: string,
   jobId: string,
-  onProgress?: (progress: ImportProgress) => void
+  onProgress?: (progress: ImportProgress) => void,
+  selectedUrls?: string[]
 ): Promise<ImportResult> {
   // Normalize URL to avoid SSL issues with www vs non-www
   const normalizedUrl = normalizeWebsiteUrl(websiteUrl);
@@ -252,12 +254,19 @@ export async function importWebsiteVehicles(
     const vehicleUrls = parseListingPage(html);
 
     // Convert URLs to vehicle summaries
-    const summaries: ScrapedVehicleSummary[] = [];
+    let summaries: ScrapedVehicleSummary[] = [];
     for (const url of vehicleUrls) {
       const summary = parseVehicleFromUrl(url, websiteUrl);
       if (summary) {
         summaries.push(summary);
       }
+    }
+
+    // If selectedUrls is provided, filter to only import those vehicles
+    if (selectedUrls && selectedUrls.length > 0) {
+      const selectedSet = new Set(selectedUrls);
+      summaries = summaries.filter(s => selectedSet.has(s.url));
+      console.log(`[Scraper Import] Filtered to ${summaries.length} selected vehicles from ${vehicleUrls.length} total`);
     }
 
     const total = Math.min(summaries.length, config.maxVehiclesPerImport);
