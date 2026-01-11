@@ -154,22 +154,51 @@ export async function previewWebsiteVehicles(
     }
 
     // Check which vehicles exist in database
+    // Fetch detail pages to get VINs for accurate matching (same as import logic)
     const previewVehicles: PreviewVehicle[] = [];
     let existingCount = 0;
 
     for (const summary of summaries) {
-      // Try to find existing vehicle by year+make+model
-      const existing = await prisma.vehicle.findFirst({
-        where: {
-          dealershipId,
-          year: summary.year,
-          make: { equals: summary.make, mode: "insensitive" },
-          model: { equals: summary.model, mode: "insensitive" },
-        },
-        select: { id: true, vin: true },
-      });
+      let vin: string | null = null;
+      let existing = null;
+      let matchedByVin = false;
 
-      const existsInDb = !!existing;
+      // Fetch detail page to get VIN for accurate matching
+      try {
+        // Small delay between fetches to be polite
+        await new Promise(resolve => setTimeout(resolve, 200));
+        const detailHtml = await fetchPage(summary.url, config);
+        const detail = parseVehicleDetailPage(detailHtml, summary.url);
+        vin = detail.vin;
+      } catch (error) {
+        console.log(`[Preview] Could not fetch detail page for ${summary.url}:`, error);
+        // Continue without VIN - will fall back to Year+Make+Model matching
+      }
+
+      // Check by VIN first (same as import logic)
+      if (vin) {
+        existing = await prisma.vehicle.findUnique({
+          where: { vin },
+          select: { id: true, dealershipId: true },
+        });
+        if (existing) matchedByVin = true;
+      }
+
+      // If no VIN match, try Year+Make+Model
+      if (!existing) {
+        existing = await prisma.vehicle.findFirst({
+          where: {
+            dealershipId,
+            year: summary.year,
+            make: { equals: summary.make, mode: "insensitive" },
+            model: { equals: summary.model, mode: "insensitive" },
+          },
+          select: { id: true, dealershipId: true },
+        });
+      }
+
+      // Skip if vehicle belongs to different dealership (VIN match but wrong dealership)
+      const existsInDb = existing && existing.dealershipId === dealershipId;
       if (existsInDb) existingCount++;
 
       previewVehicles.push({
@@ -180,9 +209,9 @@ export async function previewWebsiteVehicles(
         price: summary.price,
         mileage: summary.mileage,
         imageCount: 0, // Will be determined during full import
-        existsInDb,
-        matchedVehicleId: existing?.id,
-        matchedByVin: false,
+        existsInDb: !!existsInDb,
+        matchedVehicleId: existsInDb ? existing?.id : undefined,
+        matchedByVin,
       });
     }
 
